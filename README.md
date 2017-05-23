@@ -9,7 +9,7 @@ OTv2: Docker containers and Jupyter Notebooks for testing Open Traffic Reporter 
     - ensure port 8003 is exposed by **Dockerfile-source**
     - ensure `ENV_PRIME_LISTEN` gets set to 127.0.0.1:8003:
         - add `--httpd-service-listen tcp://127.0.0.1:8003` param to `valhalla build config` call in **Dockerfile-source**
-3. Clone `kk_kafka` branch of Open Traffic reporter [repo](https://github.com/opentraffic/reporter.git)
+3. Clone `kk_kafka` branch of Open Traffic reporter [repo](https://github.com/opentraffic/reporter/tree/kk_kafka)
 4. Build Open Traffic reporter image with `docker build --tag opentraffic/reporter:latest --force-rm .`
 5. export env vars:
     - `export VALHALLA_DOCKER_DATAPATH=</path/to/valhalla/tiles.tar>`
