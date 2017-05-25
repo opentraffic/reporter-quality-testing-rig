@@ -1,0 +1,12 @@
+FROM jupyter/scipy-notebook:latest
+MAINTAINER Max Gardner <max.gardner@mapzen.com>
+
+RUN conda install --yes \
+	'basemap=1.0*' \
+	'Shapely=1.5*' && \
+    conda clean -tipsy
+
+RUN conda install --quiet --yes -p $CONDA_DIR/envs/python2 python=2.7 \
+	'basemap=1.0*' \
+	'Shapely=1.5*'  && \
+    conda clean -tipsy

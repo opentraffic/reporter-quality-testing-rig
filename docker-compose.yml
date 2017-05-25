@@ -7,7 +7,7 @@ services:
     networks:
       - opentraffic
     ports:
-      - "8002:8002"
+      - "8003:8003"
     volumes:
       - ${DATAPATH}:/data/valhalla
     # environment:
@@ -35,10 +35,28 @@ services:
   valhalla:
     image: mapzen/valhalla-source:latest
     ports:
-      - "8003:8003"
+      - "8002:8002"
     volumes:
       - ${VALHALLA_DOCKER_DATAPATH}:/data/valhalla
+    networks:
+      - opentraffic
 
+  reporterqa:
+    image: mxndrwgrdnr/reporter-qa:beta
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/home/notebooks 
+    networks:
+      - opentraffic
+    depends_on:
+      - valhalla
+      - kafka
+      - zookeeper
+      - reporter
+    links:
+     - valhalla
+     - reporter
 
 networks:
   opentraffic:
