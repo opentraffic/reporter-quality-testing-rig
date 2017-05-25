@@ -13,11 +13,13 @@ services:
     environment:
       - MATCHER_LISTEN_PORT=8003
       # - DATASTORE_URL=http://172.17.0.1:8003/store?
+    container_name: reporter
 
   zookeeper:
     image: wurstmeister/zookeeper:latest
     ports:
       - "2181:2181"
+    container_name: zookeeper
 
   kafka:
     image: wurstmeister/kafka:latest
@@ -32,6 +34,7 @@ services:
       KAFKA_CREATE_TOPICS: "trace:4:1"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    container_name: kafka
 
   valhalla:
     image: mapzen/valhalla-source:latest
@@ -41,6 +44,7 @@ services:
       - ${VALHALLA_DOCKER_DATAPATH}:/data/valhalla
     networks:
       - opentraffic
+    container_name: valhalla
 
   reporterqa:
     image: opentraffic/reporter-qa:latest
@@ -56,8 +60,9 @@ services:
       - zookeeper
       - reporter
     links:
-     - valhalla
-     - reporter
+      - valhalla
+      - reporter
+    container_name: reporter-qa
 
 networks:
   opentraffic:
