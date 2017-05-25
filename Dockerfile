@@ -51,6 +51,7 @@ RUN conda install --quiet --yes \
     'ipyleaflet' \
     'basemap=1.0*' \
     'requests=2.9*' \
+    'pandas=0.19*' \
     'Shapely=1.5*' && \
     conda clean -tipsy
 
@@ -65,6 +66,7 @@ RUN conda create --quiet --yes -p $CONDA_DIR/envs/python2 python=2.7 \
     'pyshp' \
     'requests=2.9*' \
     'basemap=1.0*' \
+    'pandas=0.19*' \
     'Shapely=1.5*' && \
     conda clean -tipsy
 
