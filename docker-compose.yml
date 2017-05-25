@@ -10,7 +10,8 @@ services:
       - "8003:8003"
     volumes:
       - ${DATAPATH}:/data/valhalla
-    # environment:
+    environment:
+      - MATCHER_LISTEN_PORT=8003
       # - DATASTORE_URL=http://172.17.0.1:8003/store?
 
   zookeeper:
