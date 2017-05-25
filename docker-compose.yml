@@ -43,7 +43,7 @@ services:
       - opentraffic
 
   reporterqa:
-    image: mxndrwgrdnr/reporter-qa:beta
+    image: opentraffic/reporter-qa:latest
     ports:
       - "8888:8888"
     volumes:
