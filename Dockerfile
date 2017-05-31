@@ -52,7 +52,6 @@ RUN conda install --quiet --yes \
     'basemap=1.0*' \
     'requests=2.9*' \
     'pandas=0.19*' \
-    'lxml=3.7*' \
     'geojson=1.3*' \
     'Shapely=1.5*' && \
     conda clean -tipsy
@@ -72,10 +71,6 @@ RUN conda create --quiet --yes -p $CONDA_DIR/envs/python2 python=2.7 \
     'geojson=1.3*' \
     'Shapely=1.5*' && \
     conda clean -tipsy
-
-RUN source activate python2 && \
-    conda install --yes --quiet 'lxml=3.7*' && \
-    source deactivate
 
 # Add shortcuts to distinguish pip for python2 and python3 envs
 RUN ln -s $CONDA_DIR/envs/python2/bin/pip $CONDA_DIR/bin/pip2 && \
