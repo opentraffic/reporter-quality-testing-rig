@@ -17,7 +17,7 @@ OTv2: Docker containers and Jupyter Notebooks for testing Open Traffic Reporter 
 8. Navigate to `localhost:8888` in a browser to explore the pre-configured Jupyter notebooks.
 
 ### TODO
-- start scoring the traffic matches
+- resample fake GPS traces at user-defined rate
 - enumerate params to tune:
     - sigma-z
     - beta
