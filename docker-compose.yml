@@ -47,11 +47,12 @@ services:
     container_name: valhalla
 
   reporterqa:
-    image: opentraffic/reporter-qa:latest
+    image: opentraffic/reporter-quality-testing-rig:latest
     ports:
       - "8888:8888"
     volumes:
       - ./notebooks:/home/notebooks 
+      - ./data:/home/data
     networks:
       - opentraffic
     depends_on:
@@ -63,6 +64,8 @@ services:
       - valhalla
       - reporter
     container_name: reporter-qa
+    environment: 
+      GOOGLE_MAPS: $GOOGLE_MAPS
 
 networks:
   opentraffic:
