@@ -84,16 +84,13 @@ def synthesize_gps(edges, shape, distribution="normal",
 
     geojson = FeatureCollection([
         Feature(geometry=LineString(
-            trueRouteCoords), properties={
-                "stroke": "#ff0000",
-                "stroke-width": 2,
-                "stroke-opacity": 1}),
+            trueRouteCoords), properties={"style": {
+                "color": "#ff0000",
+                "weight": "3px"}}),
         Feature(geometry=LineString(
-            gpsRouteCoords), properties={
-                "stroke": "#0000ff",
-                "stroke-width": 2,
-                "stroke-opacity": 1,
-                "strokeColor": "#fff"})])
+            gpsRouteCoords), properties={"style": {
+                "color": "#0000ff",
+                "weight": "3px"}})])
     return jsonDict, geojson
 
 

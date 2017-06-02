@@ -51,8 +51,9 @@ services:
     ports:
       - "8888:8888"
     volumes:
-      - ./notebooks:/home/notebooks 
+      - ./notebooks:/home/notebooks
       - ./data:/home/data
+      - ./validator:/home/validator
     networks:
       - opentraffic
     depends_on:
