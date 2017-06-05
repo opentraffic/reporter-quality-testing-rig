@@ -6,8 +6,9 @@ import numpy as np
 import json
 import pandas as pd
 from random import shuffle
-from geojson import LineString, Feature, Point, FeatureCollection, dumps
+from geojson import Feature, FeatureCollection
 import itertools
+from pyproj import Proj, transform
 
 
 def decode(encoded):
@@ -33,13 +34,16 @@ def decode(encoded):
     return decoded
 
 
-def synthesize_gps(edges, shape, distribution="normal",
-                   stddev=0, uuid='999999'):
+def synthesize_gps(edges, shape, localEpsg, distribution="normal",
+                   noise=0, uuid='999999'):
 
+    mProj = Proj(init='epsg:{0}'.format(localEpsg))
+    llProj = Proj(init='epsg:4326')
     jsonDict = {"uuid": uuid, "trace": []}
     trueRouteCoords = []
     gpsRouteCoords = []
     coords = decode(shape)
+    # projCoords = convertCoordsToMeters(coords, localEpsg='2768')
     maxCoordIndex = max([edge['end_shape_index'] for edge in edges])
     if maxCoordIndex >= len(coords):
         return None, None
@@ -53,20 +57,18 @@ def synthesize_gps(edges, shape, distribution="normal",
         beginShapeIndex = edge['begin_shape_index']
         endShapeIndex = edge['end_shape_index']
         lon, lat = coords[endShapeIndex]
+        projLon, projLat = transform(llProj, mProj, lon, lat)
 
         if i == 0:
             st_lon, st_lat = coords[beginShapeIndex]
             trueRouteCoords.append([st_lon, st_lat])
         trueRouteCoords.append([lon, lat])
 
-        if stddev > 0:
-            avgLat = np.mean(np.array(coords)[:, 1])
-            # approx. 111.111 km per deg lon unless very close to the poles
-            stddevLon = stddev / 111.111
-            # approx 111.111 km * cos(lat) per deg lat
-            stddevLat = stddev / (111.111 * np.cos(avgLat))
-            lon += np.random.normal(scale=stddevLon)
-            lat += np.random.normal(scale=stddevLat)
+        if noise > 0:
+            projLon += np.random.normal(scale=noise)
+            projLat += np.random.normal(scale=noise)
+            lon, lat = transform(mProj, llProj, projLon, projLat)
+
         dur = dist / speed * 3600.0
         time = sttm + dur
         time = int(round(time))
@@ -74,11 +76,11 @@ def synthesize_gps(edges, shape, distribution="normal",
             st_lon, st_lat = coords[beginShapeIndex]
             jsonDict["trace"].append(
                 {"lat": st_lat, "lon": st_lon, "time": sttm, "accuracy": min(
-                    5, stddev * 1e3)})
+                    5, noise)})
             gpsRouteCoords.append([st_lon, st_lat])
         jsonDict["trace"].append(
             {"lat": lat, "lon": lon, "time": time, "accuracy": min(
-                5, stddev * 1e3)})
+                5, noise)})
         gpsRouteCoords.append([lon, lat])
         sttm = time
 

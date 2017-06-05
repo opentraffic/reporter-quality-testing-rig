@@ -47,7 +47,7 @@ RUN cd /tmp && \
 # Install Jupyter Notebook and Hub
 RUN conda install --quiet --yes \
     'notebook=4.4.*' \
-    'ipywidgets=5.2*' \
+    'ipywidgets=6.0*' \
     'ipyleaflet' \
     'basemap=1.0*' \
     'requests=2.9*' \
@@ -62,7 +62,7 @@ RUN jupyter nbextension enable --py widgetsnbextension --sys-prefix
 # Install Python 2 packages
 RUN conda create --quiet --yes -p $CONDA_DIR/envs/python2 python=2.7 \
     'ipython=4.2*' \
-    'ipywidgets=5.2*' \
+    'ipywidgets=6.0*' \
     'ipyleaflet' \
     'pyshp' \
     'requests=2.9*' \
