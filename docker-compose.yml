@@ -12,7 +12,6 @@ services:
       - ${DATAPATH}:/data/valhalla
     environment:
       - MATCHER_LISTEN_PORT=8003
-      # - DATASTORE_URL=http://172.17.0.1:8003/store?
     container_name: reporter
 
   zookeeper:
@@ -37,7 +36,7 @@ services:
     container_name: kafka
 
   valhalla:
-    image: mapzen/valhalla-source:latest
+    image: mapzen/valhalla-ppa:latest
     ports:
       - "8002:8002"
     volumes:
@@ -67,6 +66,7 @@ services:
     container_name: reporter-qa
     environment: 
       GOOGLE_MAPS: $GOOGLE_MAPS
+      MAPZEN_API: $MAPZEN_API
 
 networks:
   opentraffic:

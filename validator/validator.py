@@ -1,7 +1,7 @@
 from __future__ import division
 import requests
 import time as t
-from shapely.geometry import LineString
+from shapely.geometry import LineString, MultiPoint, MultiLineString
 import numpy as np
 import json
 import pandas as pd
@@ -9,6 +9,45 @@ from random import shuffle
 from geojson import Feature, FeatureCollection
 import itertools
 from pyproj import Proj, transform
+from scipy.stats import norm
+from ipyleaflet import (
+    Map,
+    Marker,
+    TileLayer, ImageOverlay,
+    Polyline, Rectangle, Circle, CircleMarker,
+    GeoJSON,
+    DrawControl
+)
+
+
+def convert_coords_to_meters(coords, localEpsg, inputOrder='lonlat'):
+    if inputOrder == 'latlon':
+        indices = [1, 0]
+    elif inputOrder == 'lonlat':
+        indices = [0, 1]
+    else:
+        print('"inputOrder" param cannot be processed')
+    inProj = Proj(init='epsg:4326')
+    outProj = Proj(init='epsg:{0}'.format(localEpsg))
+    projCoords = [
+        transform(inProj, outProj, coord[indices[0]], coord[indices[1]])
+        for coord in coords]
+    return projCoords
+
+
+def convert_coords_to_lat_lon(coords, localEpsg, inputOrder='xy'):
+    if inputOrder == 'yx':
+        indices = [1, 0]
+    elif inputOrder == 'xy':
+        indices = [0, 1]
+    else:
+        print('"inputOrder" param cannot be processed')
+    inProj = Proj(init='epsg:{0}'.format(localEpsg))
+    outProj = Proj(init='epsg:4326')
+    projCoords = [
+        transform(inProj, outProj, coord[indices[0]], coord[indices[1]])
+        for coord in coords]
+    return projCoords
 
 
 def decode(encoded):
@@ -34,66 +73,157 @@ def decode(encoded):
     return decoded
 
 
-def synthesize_gps(edges, shape, localEpsg, distribution="normal",
-                   noise=0, uuid='999999'):
+def get_coords_per_second(shape, edges, localEpsg):
+    mProj = Proj(init='epsg:{0}'.format(localEpsg))
+    llProj = Proj(init='epsg:4326')
+    coords = decode(shape)
+    projCoords = convert_coords_to_meters(coords, localEpsg=localEpsg)
+    for i, edge in enumerate(edges):
+        subSegmentCoords = []
+        if i == 0:
+            subSegmentCoords.append(coords[edge['begin_shape_index']])
+        dist = edge['length']
+        distMeters = dist * 1e3
+        speed = edge['speed']
+        mPerSec = speed * 1e3 / 3600.0
+        beginShapeIndex = edge['begin_shape_index']
+        endShapeIndex = edge['end_shape_index']
+        if beginShapeIndex - 1 > len(coords) | endShapeIndex - 1 > len(coords):
+            continue
+        line = LineString(projCoords[beginShapeIndex:endShapeIndex + 1])
+        seconds = 0
+        while mPerSec * seconds < distMeters:
+            seconds += 1
+            newPoint = line.interpolate(mPerSec * seconds)
+            newLon, newLat = transform(mProj, llProj, newPoint.x, newPoint.y)
+            subSegmentCoords.append([newLon, newLat])
+        if i == len(edges) - 1:
+            subSegmentCoords.append(coords[edge['end_shape_index']])
+        edge['oneSecCoords'] = subSegmentCoords
+        edge['numOneSecCoords'] = len(subSegmentCoords)
+    return edges
 
+
+def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
+                   noise=0, sampleRate=1, uuid='999999'):
+
+    accuracy = norm.ppf(0.95, loc=0, scale=max(1, noise))
     mProj = Proj(init='epsg:{0}'.format(localEpsg))
     llProj = Proj(init='epsg:4326')
     jsonDict = {"uuid": uuid, "trace": []}
+    shapeCoords = decode(shape)
     trueRouteCoords = []
+    resampledCoords = []
     gpsRouteCoords = []
-    coords = decode(shape)
-    # projCoords = convertCoordsToMeters(coords, localEpsg='2768')
-    maxCoordIndex = max([edge['end_shape_index'] for edge in edges])
-    if maxCoordIndex >= len(coords):
-        return None, None
-    sttm = t.time() - 86400   # yesterday
-
-    for i, edge in enumerate(edges):
-
-        dist = edge['length']
-        speed = edge['speed']
-
-        beginShapeIndex = edge['begin_shape_index']
-        endShapeIndex = edge['end_shape_index']
-        lon, lat = coords[endShapeIndex]
-        projLon, projLat = transform(llProj, mProj, lon, lat)
-
+    gpsProjCoords = []
+    boundaryLines = []
+    badPoints = []
+    sttm = int(t.time()) - 86400   # yesterday
+    seconds = 0
+    shapeIndexCounter = 0
+    lonNoise = []
+    latNoise = []
+    for i, edge in dfEdges.iterrows():
         if i == 0:
-            st_lon, st_lat = coords[beginShapeIndex]
-            trueRouteCoords.append([st_lon, st_lat])
-        trueRouteCoords.append([lon, lat])
-
-        if noise > 0:
-            projLon += np.random.normal(scale=noise)
-            projLat += np.random.normal(scale=noise)
-            lon, lat = transform(mProj, llProj, projLon, projLat)
-
-        dur = dist / speed * 3600.0
-        time = sttm + dur
-        time = int(round(time))
-        if i == 0:
-            st_lon, st_lat = coords[beginShapeIndex]
-            jsonDict["trace"].append(
-                {"lat": st_lat, "lon": st_lon, "time": sttm, "accuracy": min(
-                    5, noise)})
-            gpsRouteCoords.append([st_lon, st_lat])
-        jsonDict["trace"].append(
-            {"lat": lat, "lon": lon, "time": time, "accuracy": min(
-                5, noise)})
-        gpsRouteCoords.append([lon, lat])
-        sttm = time
+            trueCoords = shapeCoords[edge['begin_shape_index']]
+            trueRouteCoords.append(trueCoords)
+        trueCoords = shapeCoords[edge['end_shape_index']]
+        trueRouteCoords.append(trueCoords)
+        edgeShapeIndices = []
+        for j, coordPair in enumerate(edge['oneSecCoords']):
+            if (not seconds % sampleRate) | (
+                (i + 1 == len(dfEdges)) &
+                (j + 1 == len(edge['oneSecCoords']))
+            ):
+                lon, lat = coordPair
+                resampledCoords.append([lon, lat])
+                if noise > 0:
+                    projLon, projLat = transform(llProj, mProj, lon, lat)
+                    noiseIter = 1
+                    iterBadPoints = []
+                    while True:
+                        lonAdj = np.random.normal(scale=noise)
+                        latAdj = np.random.normal(scale=noise)
+                        newProjLon = projLon + lonAdj
+                        newProjLat = projLat + latAdj
+                        newPoint = [newProjLon, newProjLat]
+                        if shapeIndexCounter > 1:
+                            lastSegCoords = gpsProjCoords[-2:]
+                            backTrack, bl = checkForBackTrack(
+                                lastSegCoords, newPoint, noise)
+                            if not backTrack:
+                                boundaryLines.append(bl)
+                                lonNoise.append(lonAdj)
+                                latNoise.append(latAdj)
+                                break
+                            else:
+                                iterBadPoints.append(transform(
+                                    mProj, llProj, newProjLon, newProjLat))
+                            if noiseIter > 1000:
+                                lonAdj = np.mean(lonNoise[-5:])
+                                latAdj = np.mean(latNoise[-5:])
+                                newProjLon = projLon + lonAdj
+                                newProjLat = projLat + latAdj
+                                newPoint = [newProjLon, newProjLat]
+                                lastSegSlope, lastSegIntercept = \
+                                    getLineFromPoints(
+                                        lastSegCoords[0], lastSegCoords[1])
+                                perpLineSlope, perpLineIntercept = \
+                                    getPerpLineThruEndpt(
+                                        lastSegSlope, lastSegCoords[1])
+                                bl = getBoundaryLineCoords(
+                                    perpLineSlope, perpLineIntercept,
+                                    lastSegCoords[1], noise)
+                                boundaryLines.append(bl)
+                                break
+                        else:
+                            lonNoise.append(lonAdj)
+                            latNoise.append(latAdj)
+                            break
+                        noiseIter += 1
+                    projLon, projLat = newProjLon, newProjLat
+                    lon, lat = transform(mProj, llProj, projLon, projLat)
+                    gpsProjCoords.append(newPoint)
+                time = sttm + seconds
+                jsonDict["trace"].append({
+                    "lat": lat, "lon": lon, "time": time,
+                    "accuracy": accuracy})
+                gpsRouteCoords.append([lon, lat])
+                edgeShapeIndices.append(shapeIndexCounter)
+                shapeIndexCounter += 1
+            seconds += 1
+        if len(edgeShapeIndices) > 0:
+            dfEdges.loc[
+                i, 'begin_resampled_shape_index'] = min(edgeShapeIndices)
+            dfEdges.loc[
+                i, 'end_resampled_shape_index'] = max(edgeShapeIndices)
 
     geojson = FeatureCollection([
         Feature(geometry=LineString(
             trueRouteCoords), properties={"style": {
                 "color": "#ff0000",
-                "weight": "3px"}}),
+                "weight": "3px"},
+                "name": "true_route_coords"}),
+        Feature(geometry=MultiPoint(
+            resampledCoords), properties={"style": {
+                "color": "#ff0000",
+                "weight": "3px"},
+                "name": "resampled_coords"}),
         Feature(geometry=LineString(
             gpsRouteCoords), properties={"style": {
                 "color": "#0000ff",
-                "weight": "3px"}})])
-    return jsonDict, geojson
+                "weight": "3px"},
+                "name": "gps_route_coords"}),
+        Feature(geometry=MultiLineString(
+            boundaryLines), properties={"style": {
+                "color": "#4FFF33",
+                "weight": "2px"}}),
+        Feature(geometry=MultiPoint(
+            badPoints), properties={"style": {
+                "fillcolor": "#ff0000"},
+                "name": "bad_points"})])
+
+    return dfEdges, jsonDict, geojson
 
 
 def get_route_shape(stLat, stLon, endLat, endLon):
@@ -112,10 +242,10 @@ def get_route_shape(stLat, stLon, endLat, endLon):
     if route.status_code == 200:
         return shape, route.url
     else:
-        print 'No shape returned'
+        return None, 'No shape returned.'
 
 
-def get_trace_attrs(shape):
+def get_trace_attrs(shape, shapeMatch):
 
     jsonDict = {
         "encoded_polyline": shape,
@@ -123,7 +253,7 @@ def get_trace_attrs(shape):
         "directions_options": {
             "units": "kilometers"
         },
-        "shape_match": "edge_walk",
+        "shape_match": shapeMatch,
         "trace_options": {
             "turn_penalty_factor": 500
         }
@@ -141,9 +271,11 @@ def format_edge_df(edges):
     dfEdges = pd.DataFrame(edges)
     dfEdges = dfEdges[[
         'begin_shape_index', 'end_shape_index', 'length',
-        'speed', 'traffic_segments']]
+        'speed', 'traffic_segments', 'oneSecCoords']]
     dfEdges['segment_id'] = dfEdges['traffic_segments'].apply(
         lambda x: str(x[0]['segment_id']) if type(x) is list else None)
+    dfEdges['num_segments'] = dfEdges['traffic_segments'].apply(
+        lambda x: len(x) if type(x) is list else 0)
     dfEdges['starts_segment'] = dfEdges['traffic_segments'].apply(
         lambda x: x[0]['starts_segment'] if type(x) is list else None)
     dfEdges['ends_segment'] = dfEdges['traffic_segments'].apply(
@@ -153,7 +285,8 @@ def format_edge_df(edges):
     dfEdges['end_percent'] = dfEdges['traffic_segments'].apply(
         lambda x: x[0]['end_percent'] if type(x) is list else None)
     dfEdges.drop('traffic_segments', axis=1, inplace=True)
-
+    dfEdges['begin_resampled_shape_index'] = None
+    dfEdges['end_resampled_shape_index'] = None
     return dfEdges
 
 
@@ -162,11 +295,11 @@ def get_reporter_segments(gpsTrace):
     baseUrl = 'http://reporter:8003/report'
     payload = {"json": json.dumps(gpsTrace, separators=(',', ':'))}
     report = requests.get(baseUrl, params=payload)
+    # report = requests.post(baseUrl, json=gpsTrace)
     if report.status_code == 200:
-        segments = report.json()['segments']
+        segments = report.json()['segment_matcher']['segments']
     else:
-        print(report.reason)
-        return None, report.url
+        return None, report.reason
     if len(segments) > 0:
         return segments, report.url
     else:
@@ -175,24 +308,47 @@ def get_reporter_segments(gpsTrace):
 
 def get_matches(segments, dfEdges):
 
-    matches = dfEdges.copy()
-    matches.loc[:, 'matched_segment_id'] = None
-    matches.loc[:, 'matched_segment_sttm'] = None
-    matches.loc[:, 'matched_segment_endtm'] = None
-    for segment in segments:
-        matches.loc[
-            segment['begin_shape_index']:segment['end_shape_index'],
-            'matched_segment_id'] = str(segment['segment_id'])
-        matches.loc[
-            segment['begin_shape_index'],
-            'matched_segment_sttm'] = str(segment['start_time'])
-        matches.loc[
-            segment['end_shape_index'],
-            'matched_segment_endtm'] = str(segment['end_time'])
-    matches.loc[:, 'match'] = matches['segment_id'] == \
-        matches['matched_segment_id']
-    score = np.sum(matches['match']) / \
-        len(matches[~pd.isnull(matches['segment_id'])])
+    segDf = pd.DataFrame(segments, dtype=str)
+    segDf = segDf[~pd.isnull(segDf['segment_id'])]
+    segDf.loc[:, 'segment_id'] = segDf['segment_id'].astype(int).astype(str)
+    reporterSegs = pd.DataFrame(
+        segDf.segment_id.values, columns=['reporter_seg'])
+    edgeSegs = pd.DataFrame(
+        dfEdges['segment_id'].dropna().unique(),
+        columns=['edge_seg'], dtype=str)
+
+    matches = pd.merge(
+        edgeSegs.set_index("edge_seg", drop=False),
+        reporterSegs.set_index("reporter_seg", drop=False),
+        left_index=True, right_index=True, how='outer').reset_index(drop=True)
+    matches['min_valhalla_idx'] = None
+    matches['max_valhalla_idx'] = None
+    matches['min_reporter_idx'] = None
+    matches['max_reporter_idx'] = None
+    for i, match in matches.iterrows():
+        if not pd.isnull(match['edge_seg']):
+            minValIdx = dfEdges.loc[
+                dfEdges['segment_id'] == match['edge_seg'],
+                'begin_resampled_shape_index'].min()
+            maxValIdx = dfEdges.loc[
+                dfEdges['segment_id'] == match['edge_seg'],
+                'end_resampled_shape_index'].max()
+            matches.loc[i, [
+                'min_valhalla_idx', 'max_valhalla_idx']] = \
+                [minValIdx, maxValIdx]
+        if not pd.isnull(match['reporter_seg']):
+            minRepIdx = segDf.loc[
+                segDf['segment_id'] == match['reporter_seg'],
+                'begin_shape_index'].values[0]
+            maxRepIdx = segDf.loc[
+                segDf['segment_id'] == match['reporter_seg'],
+                'end_shape_index'].values[0]
+            matches.loc[
+                i, ['min_reporter_idx', 'max_reporter_idx']] = \
+                [minRepIdx, maxRepIdx]
+
+    misses = matches[['edge_seg', 'reporter_seg']].isnull().sum().values.sum()
+    score = (len(segDf) + len(dfEdges) - misses) / (len(segDf) + len(dfEdges))
     return matches, score
 
 
@@ -210,3 +366,138 @@ def get_POI_routes(locString, numResults, apiKey):
     numResults = min(len(routeList), numResults)
     routeList = routeList[:numResults]
     return routeList
+
+
+def get_routes_by_length(cityStr, minRouteLength, maxRouteLength,
+                         numResults, apiKey):
+
+    mapzenKey = apiKey
+
+    baseUrl = 'https://search.mapzen.com/v1/search?'
+    cityQuery = 'sources={0}&text={1}&api_key={2}&layer={3}&size=1'.format(
+        'whosonfirst', 'san francisco', mapzenKey, 'locality')
+    city = requests.get(baseUrl + cityQuery)
+    cityID = city.json()['features'][0]['properties']['source_id']
+
+    goodRoutes = []
+
+    baseUrlCity = 'https://whosonfirst-api.mapzen.com?' + \
+        'api_key={0}&'.format(mapzenKey)
+
+    venueQuery = 'method={0}&id={1}&placetype={2}'.format(
+        'whosonfirst.places.getDescendants', cityID, 'venue') + \
+        '&page=1&per_page=2000'
+    venues = requests.get(baseUrlCity + venueQuery)
+    venueIDs = [x['wof:id'] for x in venues.json()['places']]
+    shuffle(venueIDs)
+    venueListBreakPoints = range(0, len(venueIDs), 20)
+    venueListIter = 0
+    sttm = t.time()
+
+    while (len(goodRoutes) < numResults) & (t.time() - sttm < 300):
+        venueChunkIdx = venueListBreakPoints[venueListIter]
+        POIs = []
+        baseUrlVenues = 'https://whosonfirst-api.mapzen.com?' + \
+            'api_key={0}&page=1&per_page=1&'.format(mapzenKey) + \
+            'extras=geom:latitude,geom:longitude'
+        for venueID in venueIDs[venueChunkIdx:venueChunkIdx + 20]:
+            geoQuery = '&method={0}&id={1}&placetype={2}'.format(
+                'whosonfirst.places.getInfo', venueID, 'venue')
+            info = requests.get(baseUrlVenues + geoQuery).json()['place']
+            POIs.append({info['wof:name']: {
+                "lat": info['geom:latitude'],
+                "lon": info['geom:longitude']}})
+        routeList = list(itertools.combinations(POIs, 2))
+        for route in routeList:
+            stLat = route[0].values()[0]["lat"]
+            stLon = route[0].values()[0]["lon"]
+            endLat = route[1].values()[0]["lat"]
+            endLon = route[1].values()[0]["lon"]
+            jsonDict = {"locations": [{
+                "lat": stLat, "lon": stLon, "type": "break"},
+                {
+                "lat": endLat, "lon": endLon, "type": "break"}],
+                "costing": "auto",
+                "id": "my_work_route"}
+            payload = {"json": json.dumps(jsonDict, separators=(',', ':'))}
+            baseUrlValhalla = 'http://valhalla:8002/route'
+            routeCheck = requests.get(baseUrlValhalla, params=payload)
+            length = routeCheck.json()['trip']['summary']['length']
+            if minRouteLength < length < maxRouteLength:
+                goodRoutes.append(route)
+        venueListIter += 1
+
+    shuffle(goodRoutes)
+    goodRoutes = goodRoutes[:numResults]
+    return goodRoutes
+
+
+def generate_route_map(pathToGeojson, zoomLevel=11):
+
+    with open(pathToGeojson, "r") as f:
+        data = json.load(f)
+    ctrLon, ctrLat = np.mean(
+        np.array(data['features'][0]['geometry']['coordinates']), axis=0)
+    url = "http://stamen-tiles-{s}.a.ssl.fastly.net/toner-lite/{z}/{x}/{y}.png"
+    provider = TileLayer(url=url, opacity=1)
+    center = [ctrLat, ctrLon]
+    m = Map(default_tiles=provider, center=center, zoom=zoomLevel)
+    g = GeoJSON(data=data)
+    m.add_layer(g)
+    return m
+
+
+def getLineFromPoints(point1, point2):
+
+    x1, y1 = point1
+    x2, y2 = point2
+    m = (y2 - y1) / (x2 - x1)
+    b = y1 - (m * x1)
+    return m, b
+
+
+def getPerpLineThruEndpt(slope, endpoint):
+
+    m = -1 / slope
+    x, y = endpoint
+    b = y - (m * x)
+    return m, b
+
+
+def getBoundaryLineCoords(slope, intercept, midpoint, noise, localEpsg='2768'):
+
+    midx, midy = midpoint
+    tmpLeftX = midx - (noise * 2)
+    tmpLeftY = slope * tmpLeftX + intercept
+    leftBisect = LineString([[midx, midy], [tmpLeftX, tmpLeftY]])
+    leftEndPt = leftBisect.interpolate(noise * 2)
+    tmpRightX = midx + (noise * 2)
+    tmpRightY = slope * tmpRightX + intercept
+    rightBisect = LineString([[midx, midy], [tmpRightX, tmpRightY]])
+    rightEndPt = rightBisect.interpolate(noise * 2)
+    boundaryLine = LineString([leftEndPt, midpoint, rightEndPt])
+    boundaryLineCoords = [
+        [endpt.xy[0][0], endpt.xy[1][0]] for endpt in boundaryLine.boundary]
+    mProj = Proj(init='epsg:{0}'.format(localEpsg))
+    llProj = Proj(init='epsg:4326')
+    boundaryLineCoords = [
+        transform(mProj, llProj, x[0], x[1]) for x in boundaryLineCoords]
+    return boundaryLineCoords
+
+
+def checkForBackTrack(lastSegCoords, newPoint, noise):
+    lastSegSlope, lastSegIntercept = getLineFromPoints(
+        lastSegCoords[0], lastSegCoords[1])
+    perpLineSlope, perpLineIntercept = getPerpLineThruEndpt(
+        lastSegSlope, lastSegCoords[1])
+    bl = getBoundaryLineCoords(
+        perpLineSlope, perpLineIntercept, lastSegCoords[1], noise)
+    firstPtPos = np.sign(
+        perpLineSlope * lastSegCoords[0][0] +
+        perpLineIntercept - lastSegCoords[0][1])
+    newPtPos = np.sign(
+        perpLineSlope * newPoint[0] + perpLineIntercept - newPoint[1])
+    if firstPtPos == newPtPos:
+        return True, bl
+    else:
+        return False, bl

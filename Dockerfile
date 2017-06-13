@@ -53,6 +53,7 @@ RUN conda install --quiet --yes \
     'requests=2.9*' \
     'pandas=0.19*' \
     'geojson=1.3*' \
+    'scipy=0.17*' \ 
     'Shapely=1.5*' && \
     conda clean -tipsy
 
@@ -69,6 +70,7 @@ RUN conda create --quiet --yes -p $CONDA_DIR/envs/python2 python=2.7 \
     'basemap=1.0*' \
     'pandas=0.19*' \
     'geojson=1.3*' \
+    'scipy=0.17*' \
     'Shapely=1.5*' && \
     conda clean -tipsy
 
