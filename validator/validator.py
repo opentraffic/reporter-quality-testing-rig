@@ -117,6 +117,7 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
     gpsRouteCoords = []
     gpsProjCoords = []
     boundaryLines = []
+    displacementLines = []
     sttm = int(t.time()) - 86400   # yesterday
     seconds = 0
     shapeIndexCounter = 0
@@ -188,6 +189,7 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
                     "lat": lat, "lon": lon, "time": time,
                     "accuracy": accuracy})
                 gpsRouteCoords.append([lon, lat])
+                displacementLines.append([coordPair, [lon, lat]])
                 edgeShapeIndices.append(shapeIndexCounter)
                 shapeIndexCounter += 1
             seconds += 1
@@ -199,7 +201,7 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
 
     gpsShape = [{"lat": d["lat"], "lon": d["lon"]} for d in jsonDict['trace']]
     matches, _ = get_trace_attrs(gpsShape, encoded=False, output='matches')
-    gpsMatchCoords = [[m["lon"], m["lat"]] for m in matches]
+    gpsMatchCoords = matches
 
     geojson = FeatureCollection([
         Feature(geometry=LineString(
@@ -222,6 +224,11 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
                 "color": "#4FFF33",
                 "weight": "3px",
                 "name": "boundary_lines"}}),
+        Feature(geometry=MultiLineString(
+            displacementLines), properties={"style": {
+                "color": "#000000",
+                "weight": "1px",
+                "name": "displacement_lines"}}),
         Feature(geometry=LineString(
             gpsMatchCoords), properties={"style": {
                 "fillcolor": "#0000ff",
@@ -272,7 +279,7 @@ def get_trace_attrs(shape, encoded=True, shapeMatch='map_snap',
     baseUrl = 'http://valhalla:8002/trace_attributes?'
     matched = requests.get(baseUrl, params=payload)
     edges = matched.json()['edges']
-    matchedPts = matched.json()['matched_points']
+    matchedPts = decode(matched.json()['shape'])
 
     if output == 'edges':
         return edges, matched.url
@@ -461,7 +468,7 @@ def generate_route_map(pathToGeojson, zoomLevel=11):
     center = [ctrLat, ctrLon]
     m = Map(default_tiles=provider, center=center, zoom=zoomLevel)
     trueRouteCoords, resampledCoords, gpsRouteCoords, boundaryLines, \
-        gpsMatchCoords = data['features']
+        displacementLines, gpsMatchCoords = data['features']
     g = GeoJSON(data=FeatureCollection(
         [trueRouteCoords, boundaryLines, gpsMatchCoords]))
     m.add_layer(g)
@@ -475,6 +482,8 @@ def generate_route_map(pathToGeojson, zoomLevel=11):
             location=coords[::-1], radius=10, weight=1, color='#0000ff',
             opacity=1.0, fill_opacity=0.4, fill_color='#0000ff')
         m.add_layer(cm)
+    g = GeoJSON(data=displacementLines)
+    m.add_layer(g)
     return m
 
 
