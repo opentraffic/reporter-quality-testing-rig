@@ -117,7 +117,6 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
     gpsRouteCoords = []
     gpsProjCoords = []
     boundaryLines = []
-    badPoints = []
     sttm = int(t.time()) - 86400   # yesterday
     seconds = 0
     shapeIndexCounter = 0
@@ -198,6 +197,10 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
             dfEdges.loc[
                 i, 'end_resampled_shape_index'] = max(edgeShapeIndices)
 
+    gpsShape = [{"lat": d["lat"], "lon": d["lon"]} for d in jsonDict['trace']]
+    matches, _ = get_trace_attrs(gpsShape, encoded=False, output='matches')
+    gpsMatchCoords = [[m["lon"], m["lat"]] for m in matches]
+
     geojson = FeatureCollection([
         Feature(geometry=LineString(
             trueRouteCoords), properties={"style": {
@@ -209,19 +212,21 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
                 "color": "#ff0000",
                 "weight": "3px"},
                 "name": "resampled_coords"}),
-        Feature(geometry=LineString(
+        Feature(geometry=MultiPoint(
             gpsRouteCoords), properties={"style": {
                 "color": "#0000ff",
                 "weight": "3px"},
-                "name": "gps_route_coords"}),
+                "name": "gps_coords"}),
         Feature(geometry=MultiLineString(
             boundaryLines), properties={"style": {
                 "color": "#4FFF33",
-                "weight": "2px"}}),
-        Feature(geometry=MultiPoint(
-            badPoints), properties={"style": {
-                "fillcolor": "#ff0000"},
-                "name": "bad_points"})])
+                "weight": "3px",
+                "name": "boundary_lines"}}),
+        Feature(geometry=LineString(
+            gpsMatchCoords), properties={"style": {
+                "fillcolor": "#0000ff",
+                "weight": "3px",
+                "name": "matched_gps_route"}})])
 
     return dfEdges, jsonDict, geojson
 
@@ -245,10 +250,15 @@ def get_route_shape(stLat, stLon, endLat, endLon):
         return None, 'No shape returned.'
 
 
-def get_trace_attrs(shape, shapeMatch):
+def get_trace_attrs(shape, encoded=True, shapeMatch='map_snap',
+                    output='edges'):
+    if encoded:
+        shape_param = 'encoded_polyline'
+    else:
+        shape_param = 'shape'
 
     jsonDict = {
-        "encoded_polyline": shape,
+        shape_param: shape,
         "costing": "auto",
         "directions_options": {
             "units": "kilometers"
@@ -262,8 +272,14 @@ def get_trace_attrs(shape, shapeMatch):
     baseUrl = 'http://valhalla:8002/trace_attributes?'
     matched = requests.get(baseUrl, params=payload)
     edges = matched.json()['edges']
+    matchedPts = matched.json()['matched_points']
 
-    return edges, matched.url
+    if output == 'edges':
+        return edges, matched.url
+    elif output == 'matches':
+        return matchedPts, matched.url
+    else:
+        raise Exception('Please specify an output type.')
 
 
 def format_edge_df(edges):
@@ -308,7 +324,9 @@ def get_reporter_segments(gpsTrace):
 
 def get_matches(segments, dfEdges):
 
-    segDf = pd.DataFrame(segments, dtype=str)
+    segDf = pd.DataFrame(segments, columns=[
+        'begin_shape_index', 'end_shape_index', 'end_time', 'internal',
+        'segment_id', 'length', 'start_time'])
     segDf = segDf[~pd.isnull(segDf['segment_id'])]
     segDf.loc[:, 'segment_id'] = segDf['segment_id'].astype(int).astype(str)
     reporterSegs = pd.DataFrame(
@@ -442,8 +460,21 @@ def generate_route_map(pathToGeojson, zoomLevel=11):
     provider = TileLayer(url=url, opacity=1)
     center = [ctrLat, ctrLon]
     m = Map(default_tiles=provider, center=center, zoom=zoomLevel)
-    g = GeoJSON(data=data)
+    trueRouteCoords, resampledCoords, gpsRouteCoords, boundaryLines, \
+        gpsMatchCoords = data['features']
+    g = GeoJSON(data=FeatureCollection(
+        [trueRouteCoords, boundaryLines, gpsMatchCoords]))
     m.add_layer(g)
+    for coords in resampledCoords['geometry']['coordinates']:
+        cm = Circle(
+            location=coords[::-1], radius=10, weight=1, color='#ff0000',
+            opacity=1.0, fill_opacity=0.4, fill_color='#ff0000')
+        m.add_layer(cm)
+    for coords in gpsRouteCoords['geometry']['coordinates']:
+        cm = Circle(
+            location=coords[::-1], radius=10, weight=1, color='#0000ff',
+            opacity=1.0, fill_opacity=0.4, fill_color='#0000ff')
+        m.add_layer(cm)
     return m
 
 
