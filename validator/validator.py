@@ -10,13 +10,12 @@ from geojson import Feature, FeatureCollection
 import itertools
 from pyproj import Proj, transform
 from scipy.stats import norm
+from ipywidgets import Layout
 from ipyleaflet import (
     Map,
-    Marker,
-    TileLayer, ImageOverlay,
-    Polyline, Rectangle, Circle, CircleMarker,
-    GeoJSON,
-    DrawControl
+    TileLayer,
+    Circle,
+    GeoJSON
 )
 
 
@@ -118,11 +117,12 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
     gpsProjCoords = []
     boundaryLines = []
     displacementLines = []
+    lonAdjs = []
+    latAdjs = []
+    noiseLookback = int(np.ceil(10 / sampleRate))
     sttm = int(t.time()) - 86400   # yesterday
     seconds = 0
     shapeIndexCounter = 0
-    lonNoise = []
-    latNoise = []
     for i, edge in dfEdges.iterrows():
         if i == 0:
             trueCoords = shapeCoords[edge['begin_shape_index']]
@@ -139,55 +139,26 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
                 resampledCoords.append([lon, lat])
                 if noise > 0:
                     projLon, projLat = transform(llProj, mProj, lon, lat)
-                    noiseIter = 1
-                    iterBadPoints = []
                     while True:
                         lonAdj = np.random.normal(scale=noise)
                         latAdj = np.random.normal(scale=noise)
-                        newProjLon = projLon + lonAdj
-                        newProjLat = projLat + latAdj
-                        newPoint = [newProjLon, newProjLat]
-                        if shapeIndexCounter > 1:
-                            lastSegCoords = gpsProjCoords[-2:]
-                            backTrack, bl = checkForBackTrack(
-                                lastSegCoords, newPoint, noise)
-                            if not backTrack:
-                                boundaryLines.append(bl)
-                                lonNoise.append(lonAdj)
-                                latNoise.append(latAdj)
-                                break
-                            else:
-                                iterBadPoints.append(transform(
-                                    mProj, llProj, newProjLon, newProjLat))
-                            if noiseIter > 1000:
-                                lonAdj = np.mean(lonNoise[-5:])
-                                latAdj = np.mean(latNoise[-5:])
-                                newProjLon = projLon + lonAdj
-                                newProjLat = projLat + latAdj
-                                newPoint = [newProjLon, newProjLat]
-                                lastSegSlope, lastSegIntercept = \
-                                    getLineFromPoints(
-                                        lastSegCoords[0], lastSegCoords[1])
-                                perpLineSlope, perpLineIntercept = \
-                                    getPerpLineThruEndpt(
-                                        lastSegSlope, lastSegCoords[1])
-                                bl = getBoundaryLineCoords(
-                                    perpLineSlope, perpLineIntercept,
-                                    lastSegCoords[1], noise)
-                                boundaryLines.append(bl)
-                                break
-                        else:
-                            lonNoise.append(lonAdj)
-                            latNoise.append(latAdj)
+                        if shapeIndexCounter == 0:
+                            noiseQuad = [np.sign(lonAdj), np.sign(latAdj)]
                             break
-                        noiseIter += 1
+                        elif [np.sign(lonAdj), np.sign(latAdj)] == noiseQuad:
+                            break
+                    lonAdjs.append(lonAdj)
+                    latAdjs.append(latAdj)
+                    newProjLon = projLon + np.mean(lonAdjs[-noiseLookback:])
+                    newProjLat = projLat + np.mean(latAdjs[-noiseLookback:])
+                    newPoint = [newProjLon, newProjLat]
                     projLon, projLat = newProjLon, newProjLat
                     lon, lat = transform(mProj, llProj, projLon, projLat)
                     gpsProjCoords.append(newPoint)
                 time = sttm + seconds
                 jsonDict["trace"].append({
                     "lat": lat, "lon": lon, "time": time,
-                    "accuracy": accuracy})
+                    "accuracy": accuracy, "turn_penalty_factor": 500})
                 gpsRouteCoords.append([lon, lat])
                 displacementLines.append([coordPair, [lon, lat]])
                 edgeShapeIndices.append(shapeIndexCounter)
@@ -200,7 +171,8 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
                 i, 'end_resampled_shape_index'] = max(edgeShapeIndices)
 
     gpsShape = [{"lat": d["lat"], "lon": d["lon"]} for d in jsonDict['trace']]
-    matches, _ = get_trace_attrs(gpsShape, encoded=False, output='matches')
+    matches, _ = get_trace_attrs(
+        gpsShape, encoded=False, gpsAccuracy=accuracy, output='matches')
     gpsMatchCoords = matches
 
     geojson = FeatureCollection([
@@ -258,7 +230,7 @@ def get_route_shape(stLat, stLon, endLat, endLon):
 
 
 def get_trace_attrs(shape, encoded=True, shapeMatch='map_snap',
-                    output='edges'):
+                    gpsAccuracy=5, output='edges'):
     if encoded:
         shape_param = 'encoded_polyline'
     else:
@@ -272,7 +244,8 @@ def get_trace_attrs(shape, encoded=True, shapeMatch='map_snap',
         },
         "shape_match": shapeMatch,
         "trace_options": {
-            "turn_penalty_factor": 500
+            "turn_penalty_factor": 500,
+            "gps_accuracy": gpsAccuracy
         }
     }
     payload = {"json": json.dumps(jsonDict, separators=(',', ':'))}
@@ -294,7 +267,7 @@ def format_edge_df(edges):
     dfEdges = pd.DataFrame(edges)
     dfEdges = dfEdges[[
         'begin_shape_index', 'end_shape_index', 'length',
-        'speed', 'traffic_segments', 'oneSecCoords']]
+        'speed', 'density', 'traffic_segments', 'oneSecCoords']]
     dfEdges['segment_id'] = dfEdges['traffic_segments'].apply(
         lambda x: str(x[0]['segment_id']) if type(x) is list else None)
     dfEdges['num_segments'] = dfEdges['traffic_segments'].apply(
@@ -467,6 +440,7 @@ def generate_route_map(pathToGeojson, zoomLevel=11):
     provider = TileLayer(url=url, opacity=1)
     center = [ctrLat, ctrLon]
     m = Map(default_tiles=provider, center=center, zoom=zoomLevel)
+    m.layout = Layout(width='100%', height='800px')
     trueRouteCoords, resampledCoords, gpsRouteCoords, boundaryLines, \
         displacementLines, gpsMatchCoords = data['features']
     g = GeoJSON(data=FeatureCollection(

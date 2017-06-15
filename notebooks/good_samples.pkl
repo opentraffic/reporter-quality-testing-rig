@@ -1,0 +1,8 @@
+(lp0
+S'../data/trace_Sublime Designs Media_to_Stacy L Golding_w_25.0_m_noise_at_0.2_Hz.geojson'
+p1
+aS"../data/trace_Pete's Barbeque_to_Rocker Guitars_w_70.0_m_noise_at_0.2_Hz.geojson"
+p2
+aS'../data/trace_Scarborough Insurance_to_Stacy L Golding_w_65.0_m_noise_at_1.0_Hz.geojson'
+p3
+a.
