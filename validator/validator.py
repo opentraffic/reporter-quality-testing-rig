@@ -172,7 +172,8 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
 
     gpsShape = [{"lat": d["lat"], "lon": d["lon"]} for d in jsonDict['trace']]
     matches, _ = get_trace_attrs(
-        gpsShape, encoded=False, gpsAccuracy=accuracy, output='matches')
+        gpsShape, encoded=False, gpsAccuracy=min(100, accuracy),
+        output='matches')
     gpsMatchCoords = matches
 
     geojson = FeatureCollection([
