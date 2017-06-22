@@ -1,5 +1,8 @@
 .DS_Store
 data/
+images/
+archives/
+*.pyc
 .csv
 .json
 .geojson

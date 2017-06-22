@@ -72,10 +72,10 @@ def decode(encoded):
     return decoded
 
 
-def get_coords_per_second(shape, edges, localEpsg):
+def get_coords_per_second(shapeCoords, edges, localEpsg):
     mProj = Proj(init='epsg:{0}'.format(localEpsg))
     llProj = Proj(init='epsg:4326')
-    coords = decode(shape)
+    coords = shapeCoords
     projCoords = convert_coords_to_meters(coords, localEpsg=localEpsg)
     for i, edge in enumerate(edges):
         subSegmentCoords = []
@@ -87,7 +87,8 @@ def get_coords_per_second(shape, edges, localEpsg):
         mPerSec = speed * 1e3 / 3600.0
         beginShapeIndex = edge['begin_shape_index']
         endShapeIndex = edge['end_shape_index']
-        if beginShapeIndex - 1 > len(coords) | endShapeIndex - 1 > len(coords):
+        if (beginShapeIndex >= len(coords) - 1) | \
+           (endShapeIndex >= len(coords)):
             continue
         line = LineString(projCoords[beginShapeIndex:endShapeIndex + 1])
         seconds = 0
@@ -103,19 +104,19 @@ def get_coords_per_second(shape, edges, localEpsg):
     return edges
 
 
-def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
-                   noise=0, sampleRate=1, uuid='999999'):
+def synthesize_gps(dfEdges, shapeCoords, localEpsg, mode="auto",
+                   distribution="normal", noise=0, sampleRate=1,
+                   uuid="999999"):
 
-    accuracy = norm.ppf(0.95, loc=0, scale=max(1, noise))
+    accuracy = round(min(100, norm.ppf(0.95, loc=0, scale=max(1, noise))), 2)
     mProj = Proj(init='epsg:{0}'.format(localEpsg))
     llProj = Proj(init='epsg:4326')
-    jsonDict = {"uuid": uuid, "trace": []}
-    shapeCoords = decode(shape)
+    jsonDict = {"uuid": uuid, "trace": [], "match_options": {
+        "mode": mode,
+        "turn_penalty_factor": 500}}
     trueRouteCoords = []
     resampledCoords = []
     gpsRouteCoords = []
-    gpsProjCoords = []
-    boundaryLines = []
     displacementLines = []
     lonAdjs = []
     latAdjs = []
@@ -151,14 +152,14 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
                     latAdjs.append(latAdj)
                     newProjLon = projLon + np.mean(lonAdjs[-noiseLookback:])
                     newProjLat = projLat + np.mean(latAdjs[-noiseLookback:])
-                    newPoint = [newProjLon, newProjLat]
                     projLon, projLat = newProjLon, newProjLat
                     lon, lat = transform(mProj, llProj, projLon, projLat)
-                    gpsProjCoords.append(newPoint)
                 time = sttm + seconds
+                lat = round(lat, 6)
+                lon = round(lon, 6)
                 jsonDict["trace"].append({
                     "lat": lat, "lon": lon, "time": time,
-                    "accuracy": accuracy, "turn_penalty_factor": 500})
+                    "accuracy": accuracy})
                 gpsRouteCoords.append([lon, lat])
                 displacementLines.append([coordPair, [lon, lat]])
                 edgeShapeIndices.append(shapeIndexCounter)
@@ -171,8 +172,8 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
                 i, 'end_resampled_shape_index'] = max(edgeShapeIndices)
 
     gpsShape = [{"lat": d["lat"], "lon": d["lon"]} for d in jsonDict['trace']]
-    matches, _ = get_trace_attrs(
-        gpsShape, encoded=False, gpsAccuracy=min(100, accuracy),
+    _, matches, _ = get_trace_attrs(
+        gpsShape, encoded=False, gpsAccuracy=accuracy,
         output='matches')
     gpsMatchCoords = matches
 
@@ -192,11 +193,6 @@ def synthesize_gps(dfEdges, shape, localEpsg, distribution="normal",
                 "color": "#0000ff",
                 "weight": "3px"},
                 "name": "gps_coords"}),
-        Feature(geometry=MultiLineString(
-            boundaryLines), properties={"style": {
-                "color": "#4FFF33",
-                "weight": "3px",
-                "name": "boundary_lines"}}),
         Feature(geometry=MultiLineString(
             displacementLines), properties={"style": {
                 "color": "#000000",
@@ -254,13 +250,7 @@ def get_trace_attrs(shape, encoded=True, shapeMatch='map_snap',
     matched = requests.get(baseUrl, params=payload)
     edges = matched.json()['edges']
     matchedPts = decode(matched.json()['shape'])
-
-    if output == 'edges':
-        return edges, matched.url
-    elif output == 'matches':
-        return matchedPts, matched.url
-    else:
-        raise Exception('Please specify an output type.')
+    return edges, matchedPts, matched.url
 
 
 def format_edge_df(edges):
@@ -310,44 +300,13 @@ def get_matches(segments, dfEdges):
         'segment_id', 'length', 'start_time'])
     segDf = segDf[~pd.isnull(segDf['segment_id'])]
     segDf.loc[:, 'segment_id'] = segDf['segment_id'].astype(int).astype(str)
-    reporterSegs = pd.DataFrame(
-        segDf.segment_id.values, columns=['reporter_seg'])
-    edgeSegs = pd.DataFrame(
-        dfEdges['segment_id'].dropna().unique(),
-        columns=['edge_seg'], dtype=str)
-
     matches = pd.merge(
-        edgeSegs.set_index("edge_seg", drop=False),
-        reporterSegs.set_index("reporter_seg", drop=False),
-        left_index=True, right_index=True, how='outer').reset_index(drop=True)
-    matches['min_valhalla_idx'] = None
-    matches['max_valhalla_idx'] = None
-    matches['min_reporter_idx'] = None
-    matches['max_reporter_idx'] = None
-    for i, match in matches.iterrows():
-        if not pd.isnull(match['edge_seg']):
-            minValIdx = dfEdges.loc[
-                dfEdges['segment_id'] == match['edge_seg'],
-                'begin_resampled_shape_index'].min()
-            maxValIdx = dfEdges.loc[
-                dfEdges['segment_id'] == match['edge_seg'],
-                'end_resampled_shape_index'].max()
-            matches.loc[i, [
-                'min_valhalla_idx', 'max_valhalla_idx']] = \
-                [minValIdx, maxValIdx]
-        if not pd.isnull(match['reporter_seg']):
-            minRepIdx = segDf.loc[
-                segDf['segment_id'] == match['reporter_seg'],
-                'begin_shape_index'].values[0]
-            maxRepIdx = segDf.loc[
-                segDf['segment_id'] == match['reporter_seg'],
-                'end_shape_index'].values[0]
-            matches.loc[
-                i, ['min_reporter_idx', 'max_reporter_idx']] = \
-                [minRepIdx, maxRepIdx]
-
-    misses = matches[['edge_seg', 'reporter_seg']].isnull().sum().values.sum()
-    score = (len(segDf) + len(dfEdges) - misses) / (len(segDf) + len(dfEdges))
+        dfEdges, segDf, on='segment_id', how='outer', suffixes=(
+            '_tr_attr', '_rprtr'))
+    segMatches = segDf['segment_id'].isin(dfEdges['segment_id'])
+    edgeMatches = dfEdges['segment_id'].isin(segDf['segment_id'])
+    score = (np.sum(segMatches) + np.sum(edgeMatches)) / \
+        (len(segMatches) + len(edgeMatches))
     return matches, score
 
 
@@ -374,9 +333,10 @@ def get_routes_by_length(cityStr, minRouteLength, maxRouteLength,
 
     baseUrl = 'https://search.mapzen.com/v1/search?'
     cityQuery = 'sources={0}&text={1}&api_key={2}&layer={3}&size=1'.format(
-        'whosonfirst', 'san francisco', mapzenKey, 'locality')
+        'whosonfirst', cityStr, mapzenKey, 'locality')
     city = requests.get(baseUrl + cityQuery)
     cityID = city.json()['features'][0]['properties']['source_id']
+    bbox = city.json()['bbox']
 
     goodRoutes = []
 
@@ -442,10 +402,10 @@ def generate_route_map(pathToGeojson, zoomLevel=11):
     center = [ctrLat, ctrLon]
     m = Map(default_tiles=provider, center=center, zoom=zoomLevel)
     m.layout = Layout(width='100%', height='800px')
-    trueRouteCoords, resampledCoords, gpsRouteCoords, boundaryLines, \
+    trueRouteCoords, resampledCoords, gpsRouteCoords, \
         displacementLines, gpsMatchCoords = data['features']
     g = GeoJSON(data=FeatureCollection(
-        [trueRouteCoords, boundaryLines, gpsMatchCoords]))
+        [trueRouteCoords, gpsMatchCoords]))
     m.add_layer(g)
     for coords in resampledCoords['geometry']['coordinates']:
         cm = Circle(
