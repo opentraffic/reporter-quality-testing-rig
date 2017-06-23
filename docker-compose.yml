@@ -9,7 +9,7 @@ services:
     ports:
       - "8003:8003"
     volumes:
-      - ${DATAPATH}:/data/valhalla
+      - ${VALHALLA_DOCKER_DATAPATH}:/data/valhalla
     environment:
       - MATCHER_LISTEN_PORT=8003
     container_name: reporter

@@ -1,0 +1,204 @@
+(lp0
+((dp1
+VArray Design Inc
+p2
+(dp3
+S'lat'
+p4
+F37.741513
+sS'lon'
+p5
+F-122.418818
+ss(dp6
+VMarilyn P Driscol
+p7
+(dp8
+g4
+F37.716805
+sg5
+F-122.446429
+sstp9
+a((dp10
+VLillian Cartwright Artist
+p11
+(dp12
+g4
+F37.792679
+sg5
+F-122.431307
+ss(dp13
+VFirst Allied
+p14
+(dp15
+g4
+F37.790445
+sg5
+F-122.402371
+sstp16
+a((dp17
+VSteven S Rosenthal Law Office
+p18
+(dp19
+g4
+F37.787601
+sg5
+F-122.422248
+ss(dp20
+VAce Legal Assistance
+p21
+(dp22
+g4
+F37.773523
+sg5
+F-122.4351
+sstp23
+a(g17
+(dp24
+VHound-Gentlemen's Clothiers
+p25
+(dp26
+g4
+F37.790061
+sg5
+F-122.402647
+sstp27
+a((dp28
+VHunt Antiques
+p29
+(dp30
+g4
+F37.796524
+sg5
+F-122.403305
+ss(dp31
+VSir Speedy
+p32
+(dp33
+g4
+F37.785429
+sg5
+F-122.422884
+sstp34
+a((dp35
+VBlack Pearl Inc
+p36
+(dp37
+g4
+F37.792258
+sg5
+F-122.399763
+ss(dp38
+VP K Art & Floral Design
+p39
+(dp40
+g4
+F37.787865
+sg5
+F-122.419915
+sstp41
+a((dp42
+VElizabeth's Dog Walking
+p43
+(dp44
+g4
+F37.739948
+sg5
+F-122.50196
+ss(dp45
+VB Wolowic
+p46
+(dp47
+g4
+F37.740531
+sg5
+F-122.456957
+sstp48
+a(g38
+g20
+tp49
+a((dp50
+VSpa Sole
+p51
+(dp52
+g4
+F37.790502
+sg5
+F-122.435848
+ss(dp53
+VLynx Metals & Resources Inc
+p54
+(dp55
+g4
+F37.792737
+sg5
+F-122.404287
+sstp56
+a((dp57
+VRed 7 Communications Inc
+p58
+(dp59
+g4
+F37.756745
+sg5
+F-122.451923
+ss(dp60
+VKaiser Permanente
+p61
+(dp62
+g4
+F37.780887
+sg5
+F-122.463989
+sstp63
+a(g38
+(dp64
+VShay Government
+p65
+(dp66
+g4
+F37.792737
+sg5
+F-122.404287
+sstp67
+a(g1
+(dp68
+VMBC Cable & TV Svc
+p69
+(dp70
+g4
+F37.752768
+sg5
+F-122.408504
+sstp71
+a(g17
+g13
+tp72
+a(g57
+(dp73
+VJack In The Box
+p74
+(dp75
+g4
+F37.751156
+sg5
+F-122.418403
+sstp76
+a(g10
+g38
+tp77
+a(g50
+g17
+tp78
+a(g1
+g73
+tp79
+a(g50
+g31
+tp80
+a(g57
+g45
+tp81
+a(g50
+g13
+tp82
+a.

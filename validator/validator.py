@@ -120,7 +120,7 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, mode="auto",
     displacementLines = []
     lonAdjs = []
     latAdjs = []
-    noiseLookback = int(np.ceil(10 / sampleRate))
+    noiseLookback = int(np.ceil(30 / (sampleRate + 2)))
     sttm = int(t.time()) - 86400   # yesterday
     seconds = 0
     shapeIndexCounter = 0
@@ -310,20 +310,52 @@ def get_matches(segments, dfEdges):
     return matches, score
 
 
-def get_POI_routes(locString, numResults, apiKey):
+def get_POI_routes_by_length(locString, minRouteLength, maxRouteLength,
+                             numResults, apiKey):
 
-    url = 'https://maps.googleapis.com/maps/api/place' + \
+    baseUrl = 'https://maps.googleapis.com/maps/api/place' + \
         '/textsearch/json?query={0}&radius={1}&key={2}'
-    url = url.format("{0} point of interest".format(locString), 25000, apiKey)
-    r = requests.get(url)
-    POIs = [{x['name']: {
-        "lat": x['geometry']['location']['lat'],
-        "lon": x['geometry']['location']['lng']}} for x in r.json()['results']]
-    routeList = list(itertools.combinations(POIs, 2))
-    shuffle(routeList)
-    numResults = min(len(routeList), numResults)
-    routeList = routeList[:numResults]
-    return routeList
+    baseUrl = baseUrl.format("{0} point of interest".format(
+        locString), 25000, apiKey)
+    tokenStr = ''
+    goodRoutes = []
+    sttm = t.time()
+    while (len(goodRoutes) < numResults) & (t.time() - sttm < 300):
+        r = requests.get(baseUrl + tokenStr)
+        POIs = [{x['name']: {
+            "lat": x['geometry']['location']['lat'],
+            "lon": x['geometry']['location']['lng']}}
+            for x in r.json()['results']]
+        routeList = list(itertools.combinations(POIs, 2))
+        shuffle(routeList)
+        for route in routeList:
+            stLat = route[0].values()[0]["lat"]
+            stLon = route[0].values()[0]["lon"]
+            endLat = route[1].values()[0]["lat"]
+            endLon = route[1].values()[0]["lon"]
+            jsonDict = {"locations": [{
+                "lat": stLat, "lon": stLon, "type": "break"},
+                {
+                "lat": endLat, "lon": endLon, "type": "break"}],
+                "costing": "auto",
+                "id": "my_work_route"}
+            payload = {"json": json.dumps(jsonDict, separators=(',', ':'))}
+            baseUrlValhalla = 'http://valhalla:8002/route'
+            routeCheck = requests.get(baseUrlValhalla, params=payload)
+            if routeCheck.status_code != 200:
+                continue
+            length = routeCheck.json()['trip']['summary']['length']
+            if minRouteLength < length < maxRouteLength:
+                goodRoutes.append(route)
+        try:
+            nextPageToken = r.json()['next_page_token']
+            tokenStr = "&pagetoken={0}".format(nextPageToken)
+        except KeyError:
+            break
+    shuffle(goodRoutes)
+    numResults = min(len(goodRoutes), numResults)
+    goodRoutes = goodRoutes[:numResults]
+    return goodRoutes
 
 
 def get_routes_by_length(cityStr, minRouteLength, maxRouteLength,

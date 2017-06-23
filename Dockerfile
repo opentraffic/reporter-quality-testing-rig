@@ -4,7 +4,7 @@ USER root
 # env
 ENV DEBIAN_FRONTEND noninteractive
 
-ENV VALHALLA_VERSION "2.2.7"
+ENV VALHALLA_VERSION "2.2.8"
 
 ENV CONDA_DIR /opt/conda
 ENV PATH $CONDA_DIR/bin:$PATH
@@ -54,7 +54,8 @@ RUN conda install --quiet --yes \
     'pandas=0.19*' \
     'geojson=1.3*' \
     'scipy=0.17*' \ 
-    'Shapely=1.5*' && \
+    'Shapely=1.5*' \
+    'paramiko' && \
     conda clean -tipsy
 
 # Activate ipywidgets extension in the environment that runs the notebook server
@@ -71,7 +72,8 @@ RUN conda create --quiet --yes -p $CONDA_DIR/envs/python2 python=2.7 \
     'pandas=0.19*' \
     'geojson=1.3*' \
     'scipy=0.17*' \
-    'Shapely=1.5*' && \
+    'Shapely=1.5*' \
+    'paramiko' && \
     conda clean -tipsy
 
 # Add shortcuts to distinguish pip for python2 and python3 envs
