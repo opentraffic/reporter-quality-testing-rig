@@ -173,8 +173,7 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, mode="auto",
 
     gpsShape = [{"lat": d["lat"], "lon": d["lon"]} for d in jsonDict['trace']]
     _, matches, _ = get_trace_attrs(
-        gpsShape, encoded=False, gpsAccuracy=accuracy,
-        output='matches')
+        gpsShape, encoded=False, gpsAccuracy=accuracy)
     gpsMatchCoords = matches
 
     geojson = FeatureCollection([
@@ -227,7 +226,7 @@ def get_route_shape(stLat, stLon, endLat, endLon):
 
 
 def get_trace_attrs(shape, encoded=True, shapeMatch='map_snap',
-                    gpsAccuracy=5, output='edges'):
+                    gpsAccuracy=5):
     if encoded:
         shape_param = 'encoded_polyline'
     else:
