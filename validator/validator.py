@@ -104,16 +104,24 @@ def get_coords_per_second(shapeCoords, edges, localEpsg):
     return edges
 
 
-def synthesize_gps(dfEdges, shapeCoords, localEpsg, mode="auto",
-                   distribution="normal", noise=0, sampleRate=1,
-                   uuid="999999"):
+def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
+                   noise=0, sampleRate=1, uuid="999999", shapeMatch="map_snap",
+                   mode="auto", turnPenaltyFactor=0, breakageDist=2000, beta=3,
+                   sigmaZ=4.07, searchRadius=50):
 
     accuracy = round(min(100, norm.ppf(0.95, loc=0, scale=max(1, noise))), 2)
     mProj = Proj(init='epsg:{0}'.format(localEpsg))
     llProj = Proj(init='epsg:4326')
-    jsonDict = {"uuid": uuid, "trace": [], "match_options": {
-        "mode": mode,
-        "turn_penalty_factor": 500}}
+    jsonDict = {
+        "uuid": uuid, "trace": [], "shape_match": shapeMatch,
+        "match_options": {
+            "mode": mode,
+            "turn_penalty_factor": turnPenaltyFactor,
+            "breakage_distance": breakageDist,
+            "beta": beta,
+            "sigma_z": sigmaZ,
+            "search_radius": searchRadius,
+            "gps_accuracy": accuracy}}
     trueRouteCoords = []
     resampledCoords = []
     gpsRouteCoords = []
@@ -158,8 +166,7 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, mode="auto",
                 lat = round(lat, 6)
                 lon = round(lon, 6)
                 jsonDict["trace"].append({
-                    "lat": lat, "lon": lon, "time": time,
-                    "accuracy": accuracy})
+                    "lat": lat, "lon": lon, "time": time})
                 gpsRouteCoords.append([lon, lat])
                 displacementLines.append([coordPair, [lon, lat]])
                 edgeShapeIndices.append(shapeIndexCounter)
@@ -173,7 +180,9 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, mode="auto",
 
     gpsShape = [{"lat": d["lat"], "lon": d["lon"]} for d in jsonDict['trace']]
     _, matches, _ = get_trace_attrs(
-        gpsShape, encoded=False, gpsAccuracy=accuracy)
+        gpsShape, encoded=False, gpsAccuracy=accuracy, mode=mode,
+        turnPenaltyFactor=turnPenaltyFactor, breakageDist=breakageDist,
+        beta=beta, sigmaZ=sigmaZ, searchRadius=searchRadius)
     gpsMatchCoords = matches
 
     geojson = FeatureCollection([
@@ -206,8 +215,12 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, mode="auto",
     return dfEdges, jsonDict, geojson
 
 
-def get_route_shape(stLat, stLon, endLat, endLon):
+def get_route_shape(routeCoords):
 
+    stLat = routeCoords[0].values()[0]["lat"]
+    stLon = routeCoords[0].values()[0]["lon"]
+    endLat = routeCoords[1].values()[0]["lat"]
+    endLon = routeCoords[1].values()[0]["lon"]
     jsonDict = {"locations": [{
         "lat": stLat, "lon": stLon, "type": "break"},
         {
@@ -226,22 +239,27 @@ def get_route_shape(stLat, stLon, endLat, endLon):
 
 
 def get_trace_attrs(shape, encoded=True, shapeMatch='map_snap',
-                    gpsAccuracy=5):
+                    gpsAccuracy=5, mode="auto", turnPenaltyFactor=0,
+                    breakageDist=2000, beta=3, sigmaZ=4.07, searchRadius=50):
     if encoded:
-        shape_param = 'encoded_polyline'
+        shapeParam = 'encoded_polyline'
     else:
-        shape_param = 'shape'
+        shapeParam = 'shape'
 
     jsonDict = {
-        shape_param: shape,
+        shapeParam: shape,
         "costing": "auto",
         "directions_options": {
             "units": "kilometers"
         },
         "shape_match": shapeMatch,
         "trace_options": {
-            "turn_penalty_factor": 500,
-            "gps_accuracy": gpsAccuracy
+            "gps_accuracy": gpsAccuracy,
+            "turn_penalty_factor": turnPenaltyFactor,
+            "breakage_distance": breakageDist,
+            "beta": beta,
+            "sigma_z": sigmaZ,
+            "search_radius": searchRadius
         }
     }
     payload = {"json": json.dumps(jsonDict, separators=(',', ':'))}
@@ -367,10 +385,7 @@ def get_routes_by_length(cityStr, minRouteLength, maxRouteLength,
         'whosonfirst', cityStr, mapzenKey, 'locality')
     city = requests.get(baseUrl + cityQuery)
     cityID = city.json()['features'][0]['properties']['source_id']
-    bbox = city.json()['bbox']
-
     goodRoutes = []
-
     baseUrlCity = 'https://whosonfirst-api.mapzen.com?' + \
         'api_key={0}&'.format(mapzenKey)
 
