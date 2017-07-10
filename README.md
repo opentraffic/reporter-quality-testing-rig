@@ -20,4 +20,4 @@ OTv2: Docker containers and Jupyter Notebooks for testing Open Traffic Reporter 
 
 
 ### TO DO:
-- Build test env from a single dockerfile (i.e. not git cloning of other repos)
+- Build test env from a single dockerfile (i.e. no git cloning of other repos)

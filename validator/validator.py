@@ -302,17 +302,33 @@ def plot_accuracy_heatmap(speedDf, thresholds, sampleRates,
     plt.colorbar(im, fraction=0.02)
     ax.set_xlabel("noise", fontsize=15)
     ax.set_ylabel("sample rate", fontsize=15)
-    ax.set_xticks(np.arange(min(noiseLevels), max(noiseLevels),
-        len(noiseLevels)))
-    ax.set_yticks(np.arange(min(sampleRates), max(sampleRates),
-        len(sampleRates)))
-    ax.set_xticklabels(map(int, noiseLevels))
-    ax.set_yticklabels(map(int, sampleRates))
+    ax.set_yticks(
+        np.arange(min(sampleRates), max(sampleRates), len(sampleRates)))
+    ax.set_yticklabels([''] + map(str, (map(int, sampleRates))))
     ax.set_title("Accuracy at Optimal Error Threshold", fontsize=15)
     plt.show()
     if saveFig:
         fig.savefig('map_matching_acc_at_threshold.png')
     return accMat
+
+
+def plot_change_in_acc(oneSizeFitsAllAcc, rateSpecificAcc, sampleRates,
+                       noiseLevels):
+    fig, ax = plt.subplots(figsize=(12, 12))
+    ax.set_xlabel("noise", fontsize=15)
+    ax.set_ylabel("sample rate", fontsize=15)
+    ax.set_yticks(
+        np.arange(min(sampleRates), max(sampleRates), len(sampleRates)))
+    ax.set_yticklabels([''] + map(str, (map(int, sampleRates))))
+    accDiff = rateSpecificAcc - oneSizeFitsAllAcc
+    limit = np.max(np.abs(accDiff))
+    im = ax.imshow(
+        accDiff, cmap='RdYlGn', vmin=-limit, vmax=limit,
+        extent=[min(noiseLevels), max(noiseLevels),
+                max(sampleRates), min(sampleRates)])
+    ax.set_title(
+        "Change in Accuracy Using Rate-Specific Thresholds", fontsize=15)
+    plt.colorbar(im, fraction=0.02)
 
 
 def convert_coords_to_meters(coords, localEpsg, inputOrder='lonlat'):

@@ -36,7 +36,7 @@ services:
     container_name: kafka
 
   valhalla:
-    image: mapzen/valhalla-ppa:latest
+    image: valhalla/docker:ppa-latest
     ports:
       - "8002:8002"
     volumes:
