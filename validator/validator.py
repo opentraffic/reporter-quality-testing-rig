@@ -17,6 +17,302 @@ from ipyleaflet import (
     Circle,
     GeoJSON
 )
+from matplotlib import pyplot as plt
+
+
+def get_route_metrics(routeList, sampleRates, noiseLevels,
+                      turnPenaltyFactor=500,
+                      saveResults=True):
+
+    distance_metrics = [
+        'segments', 'distance traveled', 'undermatches',
+        'undermatch distance', 'overmatches', 'overmatch distance']
+
+    speed_metrics = [
+        'edge_speed_error', 'pct_edges_too_fast', 'pct_edges_too_slow',
+        'segment_speed_error', 'pct_segments_too_fast',
+        'pct_segments_too_slow', 'segment_speed_error_matched',
+        'segment_speed_error_missed']
+
+    scoring_metrics = distance_metrics + speed_metrics
+
+    df = pd.DataFrame(columns=[
+        'route', 'noise', 'sample_rate', 'avg_density'] +
+        scoring_metrics + ['route_url', 'trace_attr_url', 'reporter_url'])
+
+    speedDf = pd.DataFrame(columns=[
+        'route_name', 'segment_id', 'sample_rate', 'noise', 'pct_error',
+        'matched'])
+    outDfRow = -1
+    tpf = turnPenaltyFactor
+
+    for i, rteCoords in enumerate(routeList):
+
+        stName = rteCoords[0].keys()[0].encode("ascii", "ignore")
+        endName = rteCoords[1].keys()[0].encode("ascii", "ignore")
+        routeName = '{0}_to_{1}'.format(stName, endName)
+        shape, routeUrl = get_route_shape(rteCoords)
+        if shape is None:
+            print routeUrl
+            continue
+        edges, shapeCoords, traceAttrUrl = get_trace_attrs(
+            shape, shapeMatch="map_snap", turnPenaltyFactor=tpf)
+        edges = get_coords_per_second(shapeCoords, edges, '2768')
+        avgDensity = np.mean([edge['density'] for edge in edges])
+
+        for noise in noiseLevels:
+            noise = round(noise, 3)
+
+            for sampleRate in sampleRates:
+                print(
+                    "Route: {0} // Noise Level: "
+                    "{1} // Sample Rate: {2}".format(
+                        i, noise, sampleRate))
+                Hz = round(1 / sampleRate, 3)
+                outDfRow += 1
+                df.loc[
+                    outDfRow, [
+                        'route', 'noise', 'sample_rate',
+                        'route_url', 'trace_attr_url']] = [
+                            routeName, noise, sampleRate, routeUrl,
+                            traceAttrUrl]
+                dfEdges = format_edge_df(edges)
+                if dfEdges['num_segments'].max() > 1:
+                    break
+                dfEdges, jsonDict, geojson, gpsMatchEdges = synthesize_gps(
+                    dfEdges, shapeCoords, '2768', noise=noise,
+                    sampleRate=sampleRate, turnPenaltyFactor=tpf)
+
+                if jsonDict is None or geojson is None:
+                    msg = "Trace attributes tried to call more" + \
+                        " edges than are present in the route shape".format(
+                            routeName)
+                    df.loc[outDfRow, scoring_metrics + ['reporter_url']] = \
+                        [None] * 6 + [msg]
+                    continue
+                segments, reportUrl = get_reporter_segments(jsonDict)
+                if segments is None:
+                    continue
+                elif segments == 0:
+                    msg = 'Reporter found 0 segments.'
+                    df.loc[outDfRow, scoring_metrics + ['reporter_url']] = \
+                        [-1] * 6 + [reportUrl]
+                    continue
+                segScore, distScore, undermatchScore, undermatchLenScore, \
+                    overmatchScore, overmatchLenScore = get_match_scores(
+                        segments, dfEdges, gpsMatchEdges)
+                edgeSpeedScore, pctTooFastEdges, pctTooSlowEdges, \
+                    segSpeedScore, pctTooFastSegs, pctTooSlowSegs, \
+                    segMatchSpeedScore, segMissSpeedScore, \
+                    segSpeedDf = get_speed_scores(
+                        gpsMatchEdges, dfEdges, segments, sampleRate)
+                if len(segSpeedDf) < 1:
+                    continue
+                segSpeedDf.loc[:, 'route_name'] = routeName
+                segSpeedDf.loc[:, 'sample_rate'] = sampleRate
+                segSpeedDf.loc[:, 'noise'] = noise
+                speedDf = pd.concat((speedDf, segSpeedDf), ignore_index=True)
+
+                df.loc[outDfRow, scoring_metrics + ['reporter_url']] = [
+                    segScore, distScore, undermatchScore, undermatchLenScore,
+                    overmatchScore, overmatchLenScore, edgeSpeedScore,
+                    pctTooFastEdges, pctTooSlowEdges, segSpeedScore,
+                    pctTooFastSegs, pctTooSlowSegs, segMatchSpeedScore,
+                    segMissSpeedScore, reportUrl]
+                df.loc[outDfRow, 'avg_density'] = avgDensity
+                df['segments'] = df['segments'].astype(float)
+                df['overmatches'] = df['overmatches'].astype(float)
+                df['undermatches'] = df['undermatches'].astype(float)
+                df['distance traveled'] = df['distance traveled'].astype(float)
+                df['overmatch distance'] = df[
+                    'overmatch distance'].astype(float)
+                df['undermatch distance'] = df[
+                    'undermatch distance'].astype(float)
+                df['avg_density'] = df['avg_density'].astype(float)
+                df['noise'] = df['noise'].astype(float)
+                df['sample_rate'] = df['sample_rate'].astype(float)
+                df['score_density'] = df['segments'] * df['avg_density']
+
+                if saveResults:
+                    with open(
+                        '../data/trace_{0}_to_{1}_w_{2}'
+                        '_m_noise_at_{3}_Hz.geojson'.format(
+                            stName, endName, str(noise), str(Hz)), 'w+') as fp:
+                                json.dump(geojson, fp)
+
+    return df, speedDf
+
+
+def plot_segment_match_boxplots(df, sampleRates, saveFig=True):
+    for rate in sampleRates:
+        Hz = round(1 / rate, 3)
+        fig, ax = plt.subplots(figsize=(12, 8))
+        df[(df['sample_rate'] == rate) & (df['distance traveled'] >= 0)]. \
+            boxplot(column='distance traveled', by='noise', ax=ax, grid=True)
+        ax.set_ylim(0, 3)
+        ax.set_xlabel('Noise (m)', fontsize=15)
+        ax.set_ylabel('Match rate', fontsize=15)
+        ax.set_title('Sample Rate: {0} Hz'.format(Hz), fontsize=20)
+        fig.suptitle('')
+        if saveFig:
+            fig.savefig('./../data/score_vs_noise_{0}_Hz.png'.format(Hz))
+
+
+def plot_distance_metrics(df, sampleRates, saveFig=True):
+
+    norm = plt.Normalize()
+    cmap = plt.get_cmap('RdYlBu_r')
+    colors = cmap(norm(sampleRates))
+    distance_metrics = [
+        'segments', 'distance traveled', 'undermatches',
+        'undermatch distance', 'overmatches', 'overmatch distance']
+    metricArr = np.asarray(distance_metrics).reshape((3, 2))
+    fig, axarr = plt.subplots(3, 2, sharex=True, figsize=(16, 16))
+    for i, row in enumerate(axarr):
+        for j, col in enumerate(row):
+            metric = metricArr[i, j]
+            data = df[['noise', metric, 'sample_rate']].groupby(
+                ['sample_rate', 'noise']).agg('median').reset_index()
+            for k, rate in enumerate(sampleRates):
+                axarr[i, j].plot(
+                    data.loc[data['sample_rate'] == rate, 'noise'],
+                    data.loc[data['sample_rate'] == rate, metric],
+                    label=str(round(1 / rate, 3)) + ' Hz', alpha=0.7,
+                    color=colors[k])
+            axarr[i, j].legend(title='Sample Rate')
+            axarr[i, j].set_title(metric)
+
+    ax = fig.add_subplot(111, frameon=False)
+    plt.tick_params(
+        labelcolor='none', top='off', bottom='off', left='off', right='off')
+    ax.set_xlabel('Noise (m)', fontsize=15)
+    ax.set_ylabel('Match Error Rate', fontsize=15)
+    if saveFig:
+        fig.savefig('match_errors_by_sample_rate.png')
+
+
+def get_optimal_speed_error_threshold(speedDf, plot=True, saveFig=True):
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    # matched_n, bins, patches = ax.hist(
+    #     speedDf.loc[speedDf['matched'] == True, 'pct_error'], bins=100,
+    #     range=(-2, 11), label="matched segments", cumulative=True,
+    #     normed=True, histtype='step', linewidth=1.5, color='red')
+    # missed_n, bins, patches = ax.hist(
+    #     speedDf.loc[speedDf['matched'] == False, 'pct_error'], bins=100,
+    #     range=(-2, 11), label="unmatched segments", cumulative=True,
+    #     normed=True, histtype='step', linewidth=1.5, color='blue')
+
+    # bincenters = 0.5 * (bins[1:] + bins[:-1])
+    # freqDiff = matched_n - missed_n
+    # errorAtMaxDiff = bincenters[np.argmax(freqDiff)]
+    matchedSorted = speedDf.loc[
+        speedDf['matched'], 'pct_error'].sort_values()
+    matchDensity, matchBinEdges = np.histogram(
+        matchedSorted, normed=True, bins=300, density=True)
+    matchUnityDensity = matchDensity / matchDensity.sum()
+    matchCdf = np.cumsum(matchUnityDensity)
+
+    missedSorted = speedDf.loc[
+        speedDf['matched'] == False, 'pct_error'].sort_values()
+    missDensity, missBinEdges = np.histogram(
+        missedSorted, normed=True, bins=300, density=True)
+    missUnityDensity = missDensity / missDensity.sum()
+    missCdf = np.cumsum(missUnityDensity)
+    interpMissCdf = np.interp(
+        matchBinEdges[:-1], missBinEdges[:-1], missCdf)
+
+    alignedDiff = matchCdf - interpMissCdf
+    maxDiffIdx = np.argmax(alignedDiff)
+    errorAtMaxDiff = matchBinEdges[:-1][maxDiffIdx]
+
+    truePositiveRate = matchCdf[maxDiffIdx]
+    truePostiveRateStr = np.round(truePositiveRate * 100, 1)
+    falsePositiveRate = interpMissCdf[maxDiffIdx]
+    falsePostiveRateStr = np.round(falsePositiveRate * 100, 1)
+    maxDiffPctStr = np.round((errorAtMaxDiff * 100), 1)
+
+    ax.plot(matchBinEdges[:-1], matchCdf, color='b', label='matched segments')
+    ax.plot(matchBinEdges[:-1], interpMissCdf, color='r',
+            label='unmatched segments')
+    ax.set_ylim(-0.01, 1.01)
+    ax.axvline(errorAtMaxDiff, linewidth=0.5, color='r')
+    ax.annotate(
+        'True Positive Rate: {0}%'.format(truePostiveRateStr),
+        xy=(errorAtMaxDiff, truePositiveRate), xytext=(0.6, 0.75),
+        textcoords='figure fraction', arrowprops=dict(
+            width=0.05, facecolor='black'))
+    ax.annotate(
+        'False Positive Rate: {0}%'.format(falsePostiveRateStr),
+        xy=(errorAtMaxDiff, falsePositiveRate), xytext=(0.6, 0.5),
+        textcoords='figure fraction', arrowprops=dict(
+            width=0.05, facecolor='black'))
+    ax.annotate(
+        'Optimal Error Threshold: {0}%'.format(maxDiffPctStr),
+        xy=(errorAtMaxDiff, 0.1), xytext=(0.6, 0.25),
+        textcoords='figure fraction', arrowprops=dict(
+            width=0.05, facecolor='black'))
+    ax2 = ax.twinx()
+    ax2.plot(matchBinEdges[:-1], alignedDiff, linewidth=1, color='k',
+             linestyle='--', label='Frequency Difference')
+    ax2.legend(loc='lower right')
+    ax2.set_ylabel('Difference in Cumulative Frequency', fontsize=15)
+    ax.legend(loc='upper right')
+    ax.set_xlim(-1, 10)
+    ax.set_xlabel("% Error: Segment Speed", fontsize=15)
+    ax.set_ylabel("Cumulative Frequency", fontsize=15)
+    if not plot:
+        plt.close()
+    else:
+        plt.show()
+    if saveFig:
+        fig.savefig('speed_error_cdfs.png')
+
+    return errorAtMaxDiff
+
+
+def plot_accuracy_heatmap(speedDf, thresholds, sampleRates,
+                          noiseLevels, saveFig=True):
+    accMat = np.ones((len(sampleRates), len(noiseLevels)))
+    for i, sampleRate in enumerate(sampleRates):
+        if len(thresholds) == len(sampleRates):
+            threshold = thresholds[i]
+        else:
+            threshold = thresholds[0]
+        for j, noiseLevel in enumerate(noiseLevels):
+            df = speedDf.loc[
+                (speedDf['sample_rate'] == sampleRate) &
+                (speedDf['noise'] == noiseLevel)]
+
+            numTruePos = len(df.loc[
+                (speedDf['matched']) &
+                (speedDf['pct_error'] <= threshold)])
+
+            numTrueNeg = len(df.loc[
+                (speedDf['matched'] == False) &
+                (speedDf['pct_error'] > threshold)])
+
+            acc = (numTruePos + numTrueNeg) / len(df)
+            accMat[i, j] = acc
+
+    fig, ax = plt.subplots(figsize=(12, 12))
+    im = ax.imshow(accMat, interpolation='none', extent=[
+        min(noiseLevels), max(noiseLevels), max(sampleRates),
+        min(sampleRates)])
+    plt.colorbar(im, fraction=0.02)
+    ax.set_xlabel("noise", fontsize=15)
+    ax.set_ylabel("sample rate", fontsize=15)
+    ax.set_xticks(np.arange(min(noiseLevels), max(noiseLevels),
+        len(noiseLevels)))
+    ax.set_yticks(np.arange(min(sampleRates), max(sampleRates),
+        len(sampleRates)))
+    ax.set_xticklabels(map(int, noiseLevels))
+    ax.set_yticklabels(map(int, sampleRates))
+    ax.set_title("Accuracy at Optimal Error Threshold", fontsize=15)
+    plt.show()
+    if saveFig:
+        fig.savefig('map_matching_acc_at_threshold.png')
+    return accMat
 
 
 def convert_coords_to_meters(coords, localEpsg, inputOrder='lonlat'):
@@ -179,11 +475,10 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
                 i, 'end_resampled_shape_index'] = max(edgeShapeIndices)
 
     gpsShape = [{"lat": d["lat"], "lon": d["lon"]} for d in jsonDict['trace']]
-    _, matches, _ = get_trace_attrs(
+    gpsMatchEdges, gpsMatchCoords, _ = get_trace_attrs(
         gpsShape, encoded=False, gpsAccuracy=accuracy, mode=mode,
         turnPenaltyFactor=turnPenaltyFactor, breakageDist=breakageDist,
         beta=beta, sigmaZ=sigmaZ, searchRadius=searchRadius)
-    gpsMatchCoords = matches
 
     geojson = FeatureCollection([
         Feature(geometry=LineString(
@@ -212,7 +507,7 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
                 "weight": "3px",
                 "name": "matched_gps_route"}})])
 
-    return dfEdges, jsonDict, geojson
+    return dfEdges, jsonDict, geojson, gpsMatchEdges
 
 
 def get_route_shape(routeCoords):
@@ -249,9 +544,6 @@ def get_trace_attrs(shape, encoded=True, shapeMatch='map_snap',
     jsonDict = {
         shapeParam: shape,
         "costing": "auto",
-        "directions_options": {
-            "units": "kilometers"
-        },
         "shape_match": shapeMatch,
         "trace_options": {
             "gps_accuracy": gpsAccuracy,
@@ -274,7 +566,7 @@ def format_edge_df(edges):
 
     dfEdges = pd.DataFrame(edges)
     dfEdges = dfEdges[[
-        'begin_shape_index', 'end_shape_index', 'length',
+        'id', 'begin_shape_index', 'end_shape_index', 'length',
         'speed', 'density', 'traffic_segments', 'oneSecCoords']]
     dfEdges['segment_id'] = dfEdges['traffic_segments'].apply(
         lambda x: str(x[0]['segment_id']) if type(x) is list else None)
@@ -310,21 +602,119 @@ def get_reporter_segments(gpsTrace):
         return 0, report.url
 
 
-def get_matches(segments, dfEdges):
+def get_match_scores(segments, dfEdges, gpsMatchEdges):
 
     segDf = pd.DataFrame(segments, columns=[
         'begin_shape_index', 'end_shape_index', 'end_time', 'internal',
         'segment_id', 'length', 'start_time'])
     segDf = segDf[~pd.isnull(segDf['segment_id'])]
     segDf.loc[:, 'segment_id'] = segDf['segment_id'].astype(int).astype(str)
-    matches = pd.merge(
-        dfEdges, segDf, on='segment_id', how='outer', suffixes=(
-            '_tr_attr', '_rprtr'))
     segMatches = segDf['segment_id'].isin(dfEdges['segment_id'])
     edgeMatches = dfEdges['segment_id'].isin(segDf['segment_id'])
-    score = (np.sum(segMatches) + np.sum(edgeMatches)) / \
-        (len(segMatches) + len(edgeMatches))
-    return matches, score
+    segScore = 1 - ((np.sum(segMatches) + np.sum(edgeMatches)) /
+                    (len(segMatches) + len(edgeMatches)))
+
+    distTraveled = np.sum(dfEdges['length'])
+    dfGpsEdges = pd.DataFrame(gpsMatchEdges)
+    overmatchMask = ~dfGpsEdges['id'].isin(dfEdges['id'])
+    undermatchMask = ~dfEdges['id'].isin(dfGpsEdges['id'])
+
+    overmatchScore = np.sum(overmatchMask) / len(dfGpsEdges)
+    overmatchLen = np.sum(
+        dfGpsEdges.loc[overmatchMask, 'length'])
+    overmatchLenScore = overmatchLen / distTraveled
+
+    undermatchScore = np.sum(undermatchMask) / len(dfEdges)
+    undermatchLen = np.sum(
+        dfEdges.loc[undermatchMask, 'length'])
+    undermatchLenScore = undermatchLen / distTraveled
+    lenScore = (overmatchLen + undermatchLen) / distTraveled
+    return segScore, lenScore, undermatchScore, undermatchLenScore, \
+        overmatchScore, overmatchLenScore
+
+
+def get_speed_scores(gpsMatchEdges, dfEdges, segments, sampleRate):
+
+    gpsEdgeSpeeds = pd.DataFrame([(
+        edge['id'], edge['begin_shape_index'], edge['end_shape_index'],
+        edge['length'])for edge in gpsMatchEdges],
+        columns=['id', 'begin_shape_index', 'end_shape_index', 'length'])
+    gpsEdgeSpeeds['speed'] = gpsEdgeSpeeds['length'] / (
+        (gpsEdgeSpeeds['end_shape_index'] -
+            gpsEdgeSpeeds['begin_shape_index']) * (sampleRate / 3600))
+    gpsEdgeSpeeds = gpsEdgeSpeeds[['id', 'length', 'speed']]
+    gpsEdgeSpeeds['matched'] = gpsEdgeSpeeds['id'].isin(
+        dfEdges['id'])
+
+    osmEdgeSpeeds = dfEdges[['id', 'length', 'speed']]
+
+    edgeSpeeds = pd.merge(
+        osmEdgeSpeeds, gpsEdgeSpeeds, on="id", how="inner",
+        suffixes=("_osm", "_gps"))
+    edgeSpeeds['pct_error'] = (
+        edgeSpeeds['speed_gps'] -
+        edgeSpeeds['speed_osm']) / edgeSpeeds['speed_osm']
+    edgeSpeedScore = edgeSpeeds['pct_error'].median()
+    if len(edgeSpeeds) > 0:
+        pctTooFastEdges = np.sum(
+            edgeSpeeds['pct_error'] > 1.5) / len(edgeSpeeds)
+        pctTooSlowEdges = np.sum(
+            edgeSpeeds['pct_error'] < -0.5) / len(edgeSpeeds)
+    else:
+        pctTooFastEdges, pctTooSlowEdges = None, None
+
+    segDf = pd.DataFrame(segments)
+    segDf = segDf[(
+        ~pd.isnull(segDf['segment_id'])) & (
+        segDf['end_time'] != -1) & (
+        segDf['start_time'] != -1)]
+    segDf['speed'] = segDf['length'] / (
+        segDf['end_time'] - segDf['start_time']) * 3.6
+    segDf['segment_id'] = segDf['segment_id'].astype(int).astype(str)
+
+    gpsEdgeDf = pd.DataFrame(gpsMatchEdges)
+    gpsEdgeDf['segment_id'] = gpsEdgeDf['traffic_segments'].apply(
+        lambda x: str(x[0]['segment_id']) if type(x) is list else None)
+    osmSegSpeeds = gpsEdgeDf[['segment_id', 'speed']].groupby(
+        'segment_id').agg('median').reset_index()
+    gpsSegSpeeds = segDf[['segment_id', 'speed']].groupby(
+        'segment_id').agg('median').reset_index()
+    gpsSegSpeeds['matched'] = gpsSegSpeeds['segment_id'].isin(
+        dfEdges['segment_id'])
+
+    segSpeeds = pd.merge(
+        osmSegSpeeds, gpsSegSpeeds, on='segment_id', how='inner',
+        suffixes=('_osm', '_gps'))
+    segSpeeds['pct_error'] = (
+        segSpeeds['speed_gps'] -
+        segSpeeds['speed_osm']) / segSpeeds['speed_osm']
+    segSpeedScore = segSpeeds['pct_error'].median()
+
+    if len(segSpeeds) > 0:
+        pctTooFastSegs = np.sum(
+            segSpeeds['pct_error'] > 1.5) / len(segSpeeds)
+        pctTooSlowSegs = np.sum(
+            segSpeeds['pct_error'] < -0.5) / len(segSpeeds)
+        matchSpeedDf = segSpeeds[[
+            'matched', 'pct_error']].groupby(
+                'matched').agg('median').reset_index()
+        try:
+            segMatchSpeedScore = matchSpeedDf.loc[
+                matchSpeedDf['matched'] == True, 'pct_error'].values[0]
+        except IndexError:
+            segMatchSpeedScore = None
+        try:
+            segMissSpeedScore = matchSpeedDf.loc[
+                matchSpeedDf['matched'] == False, 'pct_error'].values[0]
+        except IndexError:
+            segMissSpeedScore = None
+    else:
+        pctTooFastSegs, pctTooSlowSegs, segMatchSpeedScore, \
+            segMissSpeedScore = None, None, None, segSpeedScore
+
+    return edgeSpeedScore, pctTooFastEdges, pctTooSlowEdges, segSpeedScore, \
+        pctTooFastSegs, pctTooSlowSegs, segMatchSpeedScore, \
+        segMissSpeedScore, segSpeeds[['segment_id', 'pct_error', 'matched']]
 
 
 def get_POI_routes_by_length(locString, minRouteLength, maxRouteLength,

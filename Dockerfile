@@ -55,6 +55,7 @@ RUN conda install --quiet --yes \
     'geojson=1.3*' \
     'scipy=0.17*' \ 
     'Shapely=1.5*' \
+    'seaborn=0.7*' \
     'paramiko' && \
     conda clean -tipsy
 
@@ -73,6 +74,7 @@ RUN conda create --quiet --yes -p $CONDA_DIR/envs/python2 python=2.7 \
     'geojson=1.3*' \
     'scipy=0.17*' \
     'Shapely=1.5*' \
+    'seaborn=0.7*' \
     'paramiko' && \
     conda clean -tipsy
 
