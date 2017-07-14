@@ -96,7 +96,7 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
                 elif segments == 0:
                     msg = 'Reporter found 0 segments.'
                     df.loc[outDfRow, scoring_metrics + ['reporter_url']] = \
-                        [-1] * 6 + [reportUrl]
+                        [-1] * 14 + [reportUrl]
                     continue
                 segScore, distScore, undermatchScore, undermatchLenScore, \
                     overmatchScore, overmatchLenScore = get_match_scores(
@@ -194,18 +194,6 @@ def plot_distance_metrics(df, sampleRates, saveFig=True):
 def get_optimal_speed_error_threshold(speedDf, plot=True, saveFig=True):
     fig, ax = plt.subplots(figsize=(12, 8))
 
-    # matched_n, bins, patches = ax.hist(
-    #     speedDf.loc[speedDf['matched'] == True, 'pct_error'], bins=100,
-    #     range=(-2, 11), label="matched segments", cumulative=True,
-    #     normed=True, histtype='step', linewidth=1.5, color='red')
-    # missed_n, bins, patches = ax.hist(
-    #     speedDf.loc[speedDf['matched'] == False, 'pct_error'], bins=100,
-    #     range=(-2, 11), label="unmatched segments", cumulative=True,
-    #     normed=True, histtype='step', linewidth=1.5, color='blue')
-
-    # bincenters = 0.5 * (bins[1:] + bins[:-1])
-    # freqDiff = matched_n - missed_n
-    # errorAtMaxDiff = bincenters[np.argmax(freqDiff)]
     matchedSorted = speedDf.loc[
         speedDf['matched'], 'pct_error'].sort_values()
     matchDensity, matchBinEdges = np.histogram(
@@ -331,6 +319,142 @@ def plot_change_in_acc(oneSizeFitsAllAcc, rateSpecificAcc, sampleRates,
     plt.colorbar(im, fraction=0.02)
 
 
+def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
+                           betaVals, sigmaZVals, turnPenaltyFactor=500,
+                           saveResults=True):
+    df = pd.DataFrame(
+        columns=['sample_rate', 'noise', 'beta', 'sigma_z', 'score'])
+    outDfRow = -1
+    tpf = turnPenaltyFactor
+
+    for i, rteCoords in enumerate(routeList):
+        print("Processing route {0} of {1}".format(i + 1, len(routeList)))
+        shape, routeUrl = get_route_shape(rteCoords)
+
+        for beta in betaVals:
+
+            for sigmaZ in sigmaZVals:
+                print("Computing score for sigma_z: {0}, beta: {1}".format(
+                    sigmaZ, beta))
+                edges, shapeCoords, traceAttrUrl = get_trace_attrs(
+                    shape, turnPenaltyFactor=tpf, beta=beta, sigmaZ=sigmaZ)
+                edges = get_coords_per_second(shapeCoords, edges, '2768')
+
+                for noise in noiseLevels:
+                    noise = round(noise, 3)
+
+                    for sampleRate in sampleRates:
+                        outDfRow += 1
+                        df.loc[outDfRow, [
+                            'sample_rate', 'noise', 'beta', 'sigma_z']] = [
+                                sampleRate, noise, beta, sigmaZ]
+                        dfEdges = format_edge_df(edges)
+                        dfEdges, jsonDict, geojson, gpsMatchEdges = \
+                            synthesize_gps(
+                                dfEdges, shapeCoords, '2768', noise=noise,
+                                sampleRate=sampleRate, turnPenaltyFactor=tpf,
+                                beta=beta, sigmaZ=sigmaZ)
+                        segments, reportUrl = get_reporter_segments(jsonDict)
+                        segScore, distScore, undermatchScore, \
+                            undermatchLenScore, overmatchScore, \
+                            overmatchLenScore = get_match_scores(
+                                segments, dfEdges, gpsMatchEdges)
+                        df.loc[outDfRow, 'score'] = distScore
+        df.to_csv('../data/{0}_route_{1}_param_scores.csv'.format(
+            cityName, i + 1),
+            index=False)
+    df['score'] = df['score'].astype(float)
+    df['beta'] = df['beta'].astype(float)
+    df['sigma_z'] = df['sigma_z'].astype(float)
+    if saveResults:
+        df.to_csv('../data/{0}_param_scores.csv'.format(cityName), index=False)
+    return df
+
+
+def plot_param_scores(paramDf, sampleRates, noiseLevels, betaVals, sigmaZVals):
+
+    nrows = int(np.ceil(len(sampleRates) / 2))
+    fig, axarr = plt.subplots(nrows=nrows, ncols=2, sharex=True, sharey=True,
+                              figsize=(16, 16))
+
+    if len(sampleRates) % 2:
+        axarr[-1, -1].axis('off')
+    for i, rate in enumerate(sampleRates):
+        ax = axarr.flat[i]
+        df = paramDf[paramDf['sample_rate'] == rate]
+        betaScores = df.groupby('beta').agg('mean').reset_index()
+        sigmaZScores = df.groupby('sigma_z').agg('mean').reset_index()
+        scores = np.ones((len(betaScores), len(sigmaZScores)))
+        for i, beta in enumerate(betaVals):
+            for j, sigmaZ in enumerate(sigmaZVals):
+                scores[i, j] = df.loc[
+                    (df['beta'] == beta) &
+                    (df['sigma_z'] == sigmaZ), 'score'].values[0]
+        im = ax.imshow(
+            scores, interpolation='None', cmap='RdYlGn_r', vmin=0,
+            vmax=max(paramDf['score']),
+            extent=[0, max(sigmaZVals), max(betaVals), 0])
+        ax.set_xticks([beta for beta in betaVals if not beta % 1])
+        ax.set_yticks([sigmaZ for sigmaZ in sigmaZVals if not sigmaZ % 1])
+        ax.set_xticklabels([
+            int(beta) for beta in betaVals if not beta % 1])
+        ax.set_yticklabels([
+            int(sigmaZ) for sigmaZ in sigmaZVals if not sigmaZ % 1])
+        ax.set_adjustable('box-forced')
+        hz = str(round(1 / rate, 2))
+        ax.set_title(hz + ' Hz')
+
+    fig.subplots_adjust(right=0.8)
+    cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+    fig.colorbar(im, cax=cbar_ax)
+    ax = fig.add_subplot(111, frameon=False)
+    plt.tick_params(
+        labelcolor='none', top='off', bottom='off', left='off', right='off')
+    ax.set_xlabel('beta', fontsize=15)
+    ax.set_ylabel('sigma-z', fontsize=15)
+    ax.set_title(
+        'Segment Match Error (distance traveled)'
+        ' \n by Sample Rate', fontsize=20, y=1.04)
+    plt.show()
+
+
+def plot_pattern_failure(matchDf, sampleRates, noiseLevels):
+
+    errorVals = [-1, 1]
+    titles = ['that Returned 0 Segments', 'with 100% Match Error']
+
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6), sharey=True, sharex=True)
+
+    for k, ax in enumerate(axes):
+        errMat = np.ones((len(sampleRates), len(noiseLevels)))
+        for i, sampleRate in enumerate(sampleRates):
+            for j, noiseLevel in enumerate(noiseLevels):
+                df = matchDf.loc[
+                    (matchDf['sample_rate'] == sampleRate) &
+                    (matchDf['noise'] == noiseLevel)]
+                errCount = len(df[df['segments'] == errorVals[k]])
+                errMat[i, j] = int(errCount)
+        xFrac = (max(noiseLevels) - min(noiseLevels)) / (len(noiseLevels) * 2)
+        yFrac = (max(sampleRates) - min(sampleRates)) / (len(sampleRates) * 2)
+
+        im = ax.imshow(errMat, extent=[
+            min(noiseLevels), max(noiseLevels), max(sampleRates),
+            min(sampleRates)], cmap='YlOrRd')
+
+        ax.set_yticks(
+            np.linspace(yFrac, max(sampleRates) - yFrac, len(sampleRates)))
+        ax.set_yticklabels(map(str, (map(int, sampleRates))))
+        ax.set_adjustable('box-forced')
+        ax.set_xticks(
+            np.linspace(xFrac, max(noiseLevels) - xFrac, len(noiseLevels)))
+        ax.set_xticklabels(map(str, (map(int, noiseLevels))))
+        ax.set_title('Routes {0}'.format(titles[k]), fontsize=14)
+    fig.subplots_adjust(right=0.8)
+    cbar_ax = fig.add_axes([0.44, 0.39, 0.01, 0.22])
+    fig.colorbar(im, cax=cbar_ax)
+    plt.show()
+
+
 def convert_coords_to_meters(coords, localEpsg, inputOrder='lonlat'):
     if inputOrder == 'latlon':
         indices = [1, 0]
@@ -411,6 +535,8 @@ def get_coords_per_second(shapeCoords, edges, localEpsg):
             subSegmentCoords.append([newLon, newLat])
         if i == len(edges) - 1:
             subSegmentCoords.append(coords[edge['end_shape_index']])
+        if type(subSegmentCoords) == float:
+            print subSegmentCoords
         edge['oneSecCoords'] = subSegmentCoords
         edge['numOneSecCoords'] = len(subSegmentCoords)
     return edges
