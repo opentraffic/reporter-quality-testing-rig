@@ -1,8 +1,9 @@
-.DS_Store
+*.DS_Store
 data/
 images/
 archives/
 *.pyc
-.csv
-.json
-.geojson
+notebooks/*.csv
+notebooks/*.pkl
+*.json
+*.geojson
