@@ -9,6 +9,7 @@ OTv2: Docker containers and Jupyter Notebooks for testing Open Traffic Reporter 
     - `./build.sh ppa latest`
 4. Clone `dev` branch of Open Traffic reporter [repo](https://github.com/opentraffic/reporter/tree/dev)
 5. Build Open Traffic reporter image:
+	- add the following parameter to the `RUN valhalla_build_config` line in the Dockerfile: `--meili-customizable mode,search_radius,turn_penalty_factor,gps_accuracy,sigma_z,beta`
 	- `docker build -t opentraffic/reporter:latest --force-rm .`
 6. Export env vars:
     - `export VALHALLA_DOCKER_DATAPATH=</path/to/valhalla/tiles.tar>`
@@ -20,4 +21,4 @@ OTv2: Docker containers and Jupyter Notebooks for testing Open Traffic Reporter 
 
 
 ### TO DO:
-- Build test env from a single dockerfile (i.e. no git cloning of other repos)
+- Steps 2-5 should soon be obsolete as soon as the latest changes to the Valhalla ppa have been pushed to dockerhub.

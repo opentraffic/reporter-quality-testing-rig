@@ -21,8 +21,8 @@ from matplotlib import pyplot as plt
 
 
 def get_route_metrics(routeList, sampleRates, noiseLevels,
-                      turnPenaltyFactor=500,
-                      saveResults=True):
+                      turnPenaltyFactor=500, sigmaZ=4.07, beta=3,
+                      speedErrThreshold=None, saveResults=True):
 
     distance_metrics = [
         'segments', 'distance traveled', 'undermatches',
@@ -55,8 +55,9 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
         if shape is None:
             print routeUrl
             continue
-        edges, shapeCoords, traceAttrUrl = get_trace_attrs(
-            shape, shapeMatch="map_snap", turnPenaltyFactor=tpf)
+        edges, matchedPts, shapeCoords, traceAttrUrl = get_trace_attrs(
+            shape, shapeMatch="map_snap", turnPenaltyFactor=tpf, sigmaZ=sigmaZ,
+            beta=beta)
         edges = get_coords_per_second(shapeCoords, edges, '2768')
         avgDensity = np.mean([edge['density'] for edge in edges])
 
@@ -79,9 +80,10 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
                 dfEdges = format_edge_df(edges)
                 if dfEdges['num_segments'].max() > 1:
                     break
-                dfEdges, jsonDict, geojson, gpsMatchEdges = synthesize_gps(
+                dfEdges, jsonDict, geojson, gpsMatchEdges, gpsMatchShape = synthesize_gps(
                     dfEdges, shapeCoords, '2768', noise=noise,
-                    sampleRate=sampleRate, turnPenaltyFactor=tpf)
+                    sampleRate=sampleRate, turnPenaltyFactor=tpf, beta=beta,
+                    sigmaZ=sigmaZ)
 
                 if jsonDict is None or geojson is None:
                     msg = "Trace attributes tried to call more" + \
@@ -112,6 +114,61 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
                 segSpeedDf.loc[:, 'sample_rate'] = sampleRate
                 segSpeedDf.loc[:, 'noise'] = noise
                 speedDf = pd.concat((speedDf, segSpeedDf), ignore_index=True)
+
+                # add threshold cutoff stylings to geojson
+                if speedErrThreshold is not None:
+                    dfGpsMatchEdges = pd.DataFrame(gpsMatchEdges)
+                    dfGpsMatchEdges = dfGpsMatchEdges[[
+                        'id', 'begin_shape_index', 'end_shape_index',
+                        'traffic_segments']]
+                    dfGpsMatchEdges['segment_id'] = dfGpsMatchEdges[
+                        'traffic_segments'].apply(
+                            lambda x: str(x[0]['segment_id'])
+                            if type(x) is list else None)
+                    merged = pd.merge(
+                        dfGpsMatchEdges, segSpeedDf, on='segment_id',
+                        how='left')
+                    merged = merged[[
+                        'begin_shape_index', 'end_shape_index', 'pct_error']]
+                    tooFastSegs = []
+                    okSegs = []
+                    notMatchedSegs = []
+                    threshold = 0.05
+
+                    for i, row in merged.iterrows():
+                        segCoords = gpsMatchShape[
+                            int(row['begin_shape_index']):int(
+                                (row['end_shape_index'] + 1))]
+                        if pd.isnull(row['pct_error']):
+                            notMatchedSegs.append(segCoords)
+                        elif row['pct_error'] > threshold:
+                            tooFastSegs.append(segCoords)
+                        else:
+                            okSegs.append(segCoords)
+
+                    tooFastSegs = Feature(geometry=MultiLineString(
+                        tooFastSegs), properties={"style": {
+                            "color": "#cc3232",
+                            "weight": "3px",
+                            "opacity": 1.0,
+                            "name": "too_fast_segs"}})
+
+                    okSegs = Feature(geometry=MultiLineString(
+                        okSegs), properties={"style": {
+                            "color": "#2dc937",
+                            "weight": "3px",
+                            "opacity": 1.0,
+                            "name": "ok_segs"}})
+
+                    notMatchedSegs = Feature(geometry=MultiLineString(
+                        notMatchedSegs), properties={"style": {
+                            "color": "#ffff66",
+                            "weight": "3px",
+                            "opacity": 1.0,
+                            "name": "not_matched_segs"}})
+
+                    geojson['features'].extend((
+                        tooFastSegs, okSegs, notMatchedSegs))
 
                 df.loc[outDfRow, scoring_metrics + ['reporter_url']] = [
                     segScore, distScore, undermatchScore, undermatchLenScore,
@@ -322,12 +379,12 @@ def plot_change_in_acc(oneSizeFitsAllAcc, rateSpecificAcc, sampleRates,
 def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
                            betaVals, sigmaZVals, turnPenaltyFactor=500,
                            saveResults=True):
-    df = pd.DataFrame(
-        columns=['sample_rate', 'noise', 'beta', 'sigma_z', 'score'])
-    outDfRow = -1
-    tpf = turnPenaltyFactor
 
     for i, rteCoords in enumerate(routeList):
+        df = pd.DataFrame(
+            columns=['sample_rate', 'noise', 'beta', 'sigma_z', 'score'])
+        outDfRow = -1
+        tpf = turnPenaltyFactor
         print("Processing route {0} of {1}".format(i + 1, len(routeList)))
         shape, routeUrl = get_route_shape(rteCoords)
 
@@ -336,7 +393,7 @@ def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
             for sigmaZ in sigmaZVals:
                 print("Computing score for sigma_z: {0}, beta: {1}".format(
                     sigmaZ, beta))
-                edges, shapeCoords, traceAttrUrl = get_trace_attrs(
+                edges, matchedPts, shapeCoords, traceAttrUrl = get_trace_attrs(
                     shape, turnPenaltyFactor=tpf, beta=beta, sigmaZ=sigmaZ)
                 edges = get_coords_per_second(shapeCoords, edges, '2768')
 
@@ -349,7 +406,8 @@ def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
                             'sample_rate', 'noise', 'beta', 'sigma_z']] = [
                                 sampleRate, noise, beta, sigmaZ]
                         dfEdges = format_edge_df(edges)
-                        dfEdges, jsonDict, geojson, gpsMatchEdges = \
+                        dfEdges, jsonDict, geojson, gpsMatchEdges, \
+                            gpsMatchShape = \
                             synthesize_gps(
                                 dfEdges, shapeCoords, '2768', noise=noise,
                                 sampleRate=sampleRate, turnPenaltyFactor=tpf,
@@ -360,62 +418,131 @@ def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
                             overmatchLenScore = get_match_scores(
                                 segments, dfEdges, gpsMatchEdges)
                         df.loc[outDfRow, 'score'] = distScore
-        df.to_csv('../data/{0}_route_{1}_param_scores.csv'.format(
-            cityName, i + 1),
-            index=False)
-    df['score'] = df['score'].astype(float)
-    df['beta'] = df['beta'].astype(float)
-    df['sigma_z'] = df['sigma_z'].astype(float)
-    if saveResults:
-        df.to_csv('../data/{0}_param_scores.csv'.format(cityName), index=False)
-    return df
+        df['score'] = df['score'].astype(float)
+        df['beta'] = df['beta'].astype(float)
+        df['sigma_z'] = df['sigma_z'].astype(float)
+        if saveResults:
+            df.to_csv('../data/{0}_route_{1}_param_scores.csv'.format(
+                cityName, i + 1),
+                index=False)
 
 
 def plot_param_scores(paramDf, sampleRates, noiseLevels, betaVals, sigmaZVals):
+    fig, axarr = plt.subplots(
+        nrows=len(sampleRates), ncols=len(noiseLevels),
+        sharex=True, sharey=True, figsize=(16, 16))
+    paramDict = {}
+    for r, rate in enumerate(sampleRates):
+        paramDict[str(int(rate))] = {}
+        for n, noise in enumerate(noiseLevels):
+            paramDict[str(int(rate))][str(int(noise))] = {}
+            if len(sampleRates) > 1:
+                ax = axarr[r, n]
+            else:
+                ax = axarr
+            df = paramDf[
+                (paramDf['sample_rate'] == rate) &
+                (paramDf['noise'] == noise)]
+            scores = np.ones((len(betaVals), len(sigmaZVals)))
+            for i, beta in enumerate(betaVals):
+                for j, sigmaZ in enumerate(sigmaZVals):
+                    scores[i, j] = df.loc[
+                        (df['beta'] == beta) &
+                        (df['sigma_z'] == sigmaZ), 'score'].median()
+            minErrBetaIdx, minErrSigmaIdx = np.where(scores == np.min(scores))
+            minErrBeta = np.median(betaVals[minErrBetaIdx])
+            minErrSigma = np.median(sigmaZVals[minErrSigmaIdx])
+            paramDict[str(int(rate))][str(int(noise))]['beta'] = minErrBeta
+            paramDict[str(int(rate))][str(int(noise))]['sigma'] = minErrSigma
+            im = ax.imshow(
+                scores, interpolation='None', cmap='RdYlGn_r', vmin=0,
+                vmax=df['score'].quantile(.98),
+                extent=[min(sigmaZVals), max(sigmaZVals),
+                        max(betaVals), min(betaVals)])
+            plt.colorbar(im, ax=ax, fraction=0.04)
+            ax.set_yticks([beta for beta in betaVals if not beta % 1])
+            ax.set_xticks([sigmaZ for sigmaZ in sigmaZVals if not sigmaZ % 1])
+            ax.set_yticklabels([
+                int(beta) for beta in betaVals if not beta % 1])
+            ax.set_xticklabels([
+                int(sigmaZ) for sigmaZ in sigmaZVals if not sigmaZ % 1])
+            ax.set_adjustable('box-forced')
 
-    nrows = int(np.ceil(len(sampleRates) / 2))
-    fig, axarr = plt.subplots(nrows=nrows, ncols=2, sharex=True, sharey=True,
-                              figsize=(16, 16))
+    cols = [str(noise) + ' m Noise' for noise in noiseLevels]
+    rows = [str(round(1 / rate, 2)) + ' Hz' for rate in sampleRates]
+    for ax, col in zip(axarr[0], cols):
+        ax.set_title(col)
 
-    if len(sampleRates) % 2:
-        axarr[-1, -1].axis('off')
-    for i, rate in enumerate(sampleRates):
-        ax = axarr.flat[i]
-        df = paramDf[paramDf['sample_rate'] == rate]
-        betaScores = df.groupby('beta').agg('mean').reset_index()
-        sigmaZScores = df.groupby('sigma_z').agg('mean').reset_index()
-        scores = np.ones((len(betaScores), len(sigmaZScores)))
-        for i, beta in enumerate(betaVals):
-            for j, sigmaZ in enumerate(sigmaZVals):
-                scores[i, j] = df.loc[
-                    (df['beta'] == beta) &
-                    (df['sigma_z'] == sigmaZ), 'score'].values[0]
-        im = ax.imshow(
-            scores, interpolation='None', cmap='RdYlGn_r', vmin=0,
-            vmax=max(paramDf['score']),
-            extent=[0, max(sigmaZVals), max(betaVals), 0])
-        ax.set_xticks([beta for beta in betaVals if not beta % 1])
-        ax.set_yticks([sigmaZ for sigmaZ in sigmaZVals if not sigmaZ % 1])
-        ax.set_xticklabels([
-            int(beta) for beta in betaVals if not beta % 1])
-        ax.set_yticklabels([
-            int(sigmaZ) for sigmaZ in sigmaZVals if not sigmaZ % 1])
-        ax.set_adjustable('box-forced')
-        hz = str(round(1 / rate, 2))
-        ax.set_title(hz + ' Hz')
+    for ax, row in zip(axarr[:, 0], rows):
+        ax.set_ylabel(row, rotation=90, size='large')
 
-    fig.subplots_adjust(right=0.8)
-    cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-    fig.colorbar(im, cax=cbar_ax)
+    fig.subplots_adjust(left=0.1, wspace=0.4, hspace=0.1)
     ax = fig.add_subplot(111, frameon=False)
     plt.tick_params(
         labelcolor='none', top='off', bottom='off', left='off', right='off')
-    ax.set_xlabel('beta', fontsize=15)
-    ax.set_ylabel('sigma-z', fontsize=15)
+    ax.set_xlabel('sigma-z', fontsize=15)
+    fig.text(0.04, 0.5, 'beta', ha='center', va='center',
+             rotation='vertical', fontsize=15)
     ax.set_title(
         'Segment Match Error (distance traveled)'
         ' \n by Sample Rate', fontsize=20, y=1.04)
     plt.show()
+
+    return paramDict
+    # nrows = int(np.ceil(len(sampleRates) / 2))
+    # fig, axarr = plt.subplots(
+    #     nrows=nrows, ncols=min(len(sampleRates), 2),
+    #     sharex=True, sharey=True, figsize=(16, 16))
+
+    # if (len(sampleRates) > 1) & (len(sampleRates) % 2):
+    #     axarr[-1, -1].axis('off')
+    # for r, rate in enumerate(sampleRates):
+    #     if len(sampleRates) > 1:
+    #         ax = axarr.flat[r]
+    #     else:
+    #         ax = axarr
+    #     df = paramDf[paramDf['sample_rate'] == rate]
+    #     betaScores = df.groupby('beta').agg('mean').reset_index()
+    #     sigmaZScores = df.groupby('sigma_z').agg('mean').reset_index()
+    #     scores = np.ones((len(betaScores), len(sigmaZScores)))
+    #     for i, beta in enumerate(betaVals):
+    #         for j, sigmaZ in enumerate(sigmaZVals):
+    #             scores[i, j] = df.loc[
+    #                 (df['beta'] == beta) &
+    #                 (df['sigma_z'] == sigmaZ), 'score'].values[0]
+    #     im = ax.imshow(
+    #         scores, interpolation='None', cmap='RdYlGn_r', vmin=0,
+    #         vmax=paramDf['score'].quantile(0.8),
+    #         extent=[0, max(sigmaZVals), max(betaVals), 0])
+    #     ax.set_xticks([beta for beta in betaVals if not beta % 1])
+    #     ax.set_yticks([sigmaZ for sigmaZ in sigmaZVals if not sigmaZ % 1])
+    #     ax.set_xticklabels([
+    #         int(beta) for beta in betaVals if not beta % 1])
+    #     ax.set_yticklabels([
+    #         int(sigmaZ) for sigmaZ in sigmaZVals if not sigmaZ % 1])
+    #     ax.set_adjustable('box-forced')
+    #     hz = str(round(1 / rate, 2))
+    #     ax.set_title(hz + ' Hz')
+
+    # fig.subplots_adjust(right=0.8)
+    # cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+    # fig.colorbar(im, cax=cbar_ax)
+    # ax = fig.add_subplot(111, frameon=False)
+    # plt.tick_params(
+    #     labelcolor='none', top='off', bottom='off', left='off', right='off')
+    # ax.set_xlabel('beta', fontsize=15)
+    # ax.set_ylabel('sigma-z', fontsize=15)
+    # ax.set_title(
+    #     'Segment Match Error (distance traveled)'
+    #     ' \n by Sample Rate', fontsize=20, y=1.04)
+    # plt.show()
+
+
+def get_optimal_params(paramDict, sampleRateStr, noiseLevelStr):
+    valDict = paramDict[sampleRateStr][noiseLevelStr]
+    beta = valDict['beta']
+    sigmaZ = valDict['sigma']
+    return beta, sigmaZ
 
 
 def plot_pattern_failure(matchDf, sampleRates, noiseLevels):
@@ -452,6 +579,12 @@ def plot_pattern_failure(matchDf, sampleRates, noiseLevels):
     fig.subplots_adjust(right=0.8)
     cbar_ax = fig.add_axes([0.44, 0.39, 0.01, 0.22])
     fig.colorbar(im, cax=cbar_ax)
+    ax = fig.add_subplot(111, frameon=False)
+    plt.tick_params(
+        labelcolor='none', top='off', bottom='off', left='off', right='off')
+    ax.set_xlabel('Noise (m)', fontsize=15)
+    ax.set_ylabel('Sample Rate (s)', fontsize=15)
+    ax.xaxis.set_label_coords(0.5, -0.01)
     plt.show()
 
 
@@ -617,7 +750,7 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
                 i, 'end_resampled_shape_index'] = max(edgeShapeIndices)
 
     gpsShape = [{"lat": d["lat"], "lon": d["lon"]} for d in jsonDict['trace']]
-    gpsMatchEdges, gpsMatchCoords, _ = get_trace_attrs(
+    gpsMatchEdges, gpsMatchPts, gpsMatchShape, _ = get_trace_attrs(
         gpsShape, encoded=False, gpsAccuracy=accuracy, mode=mode,
         turnPenaltyFactor=turnPenaltyFactor, breakageDist=breakageDist,
         beta=beta, sigmaZ=sigmaZ, searchRadius=searchRadius)
@@ -625,8 +758,9 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
     geojson = FeatureCollection([
         Feature(geometry=LineString(
             trueRouteCoords), properties={"style": {
-                "color": "#ff0000",
-                "weight": "3px"},
+                "color": "#ff9900",
+                "weight": "2px"},
+                "opacity": 0.9,
                 "name": "true_route_coords"}),
         Feature(geometry=MultiPoint(
             resampledCoords), properties={"style": {
@@ -635,7 +769,7 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
                 "name": "resampled_coords"}),
         Feature(geometry=MultiPoint(
             gpsRouteCoords), properties={"style": {
-                "color": "#0000ff",
+                "color": "#ff0000",
                 "weight": "3px"},
                 "name": "gps_coords"}),
         Feature(geometry=MultiLineString(
@@ -644,12 +778,13 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
                 "weight": "1px",
                 "name": "displacement_lines"}}),
         Feature(geometry=LineString(
-            gpsMatchCoords), properties={"style": {
+            gpsMatchShape), properties={"style": {
                 "fillcolor": "#0000ff",
-                "weight": "3px",
+                "weight": "7px",
+                "opacity": 0.9,
                 "name": "matched_gps_route"}})])
 
-    return dfEdges, jsonDict, geojson, gpsMatchEdges
+    return dfEdges, jsonDict, geojson, gpsMatchEdges, gpsMatchShape
 
 
 def get_route_shape(routeCoords):
@@ -700,8 +835,9 @@ def get_trace_attrs(shape, encoded=True, shapeMatch='map_snap',
     baseUrl = 'http://valhalla:8002/trace_attributes?'
     matched = requests.get(baseUrl, params=payload)
     edges = matched.json()['edges']
-    matchedPts = decode(matched.json()['shape'])
-    return edges, matchedPts, matched.url
+    matchedPts = matched.json()['matched_points']
+    shape = decode(matched.json()['shape'])
+    return edges, matchedPts, shape, matched.url
 
 
 def format_edge_df(edges):
@@ -824,6 +960,8 @@ def get_speed_scores(gpsMatchEdges, dfEdges, segments, sampleRate):
     gpsSegSpeeds['matched'] = gpsSegSpeeds['segment_id'].isin(
         dfEdges['segment_id'])
 
+    # THIS IS THE PART THAT MIGHT BE PROBLEMATIC
+    # THE INNER JOIN IS THROWING OUT 
     segSpeeds = pd.merge(
         osmSegSpeeds, gpsSegSpeeds, on='segment_id', how='inner',
         suffixes=('_osm', '_gps'))
@@ -969,10 +1107,13 @@ def get_routes_by_length(cityStr, minRouteLength, maxRouteLength,
     return goodRoutes
 
 
-def generate_route_map(pathToGeojson, zoomLevel=11):
+def generate_route_map(pathToGeojsonOrFeatureCollection, zoomLevel=11):
 
-    with open(pathToGeojson, "r") as f:
-        data = json.load(f)
+    if type(pathToGeojsonOrFeatureCollection) == str:
+        with open(pathToGeojsonOrFeatureCollection, "r") as f:
+            data = json.load(f)
+    else:
+        data = pathToGeojsonOrFeatureCollection
     ctrLon, ctrLat = np.mean(
         np.array(data['features'][0]['geometry']['coordinates']), axis=0)
     url = "http://stamen-tiles-{s}.a.ssl.fastly.net/toner-lite/{z}/{x}/{y}.png"
@@ -980,15 +1121,21 @@ def generate_route_map(pathToGeojson, zoomLevel=11):
     center = [ctrLat, ctrLon]
     m = Map(default_tiles=provider, center=center, zoom=zoomLevel)
     m.layout = Layout(width='100%', height='800px')
-    trueRouteCoords, resampledCoords, gpsRouteCoords, \
-        displacementLines, gpsMatchCoords = data['features']
-    g = GeoJSON(data=FeatureCollection(
-        [trueRouteCoords, gpsMatchCoords]))
+    if len(data['features']) > 5:
+        trueRouteCoords, resampledCoords, gpsRouteCoords, \
+            displacementLines, gpsMatchShape, tooFastSegs, okSegs, \
+            notMatchedSegs = data['features']
+    else:
+        trueRouteCoords, resampledCoords, gpsRouteCoords, \
+            displacementLines, gpsMatchShape = data['features']
+    g = GeoJSON(data=FeatureCollection([
+        trueRouteCoords, gpsMatchShape,
+        tooFastSegs, okSegs, notMatchedSegs]))
     m.add_layer(g)
     for coords in resampledCoords['geometry']['coordinates']:
         cm = Circle(
-            location=coords[::-1], radius=10, weight=1, color='#ff0000',
-            opacity=1.0, fill_opacity=0.4, fill_color='#ff0000')
+            location=coords[::-1], radius=10, weight=1, color='#ff9900',
+            opacity=1.0, fill_opacity=0.6, fill_color='#ff9900')
         m.add_layer(cm)
     for coords in gpsRouteCoords['geometry']['coordinates']:
         cm = Circle(
