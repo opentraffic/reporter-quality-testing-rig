@@ -1,4 +1,5 @@
 from __future__ import division
+import glob
 import requests
 import time as t
 from shapely.geometry import LineString, MultiPoint, MultiLineString
@@ -18,6 +19,21 @@ from ipyleaflet import (
     GeoJSON
 )
 from matplotlib import pyplot as plt
+import seaborn as sns
+import plotly.plotly as py
+import plotly.graph_objs as go
+
+
+sns.set_style({
+    'font.family': ['DejaVu Sans'],
+    'axes.facecolor': 'white',
+    'axes.grid': False,
+    'axes.linewidth': 1,
+    'axes.edgecolor': 'black',
+    'xtick.major.size': 5,
+    'xtick.direction': 'out',
+    'ytick.major.size': 5,
+    'ytick.direction': 'out'})
 
 
 def get_route_metrics(routeList, sampleRates, noiseLevels,
@@ -43,6 +59,10 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
     speedDf = pd.DataFrame(columns=[
         'route_name', 'segment_id', 'sample_rate', 'noise', 'pct_error',
         'matched'])
+
+    densityDf = pd.DataFrame(columns=[
+        'density', 'sample_rate', 'noise', 'matched'])
+
     outDfRow = -1
     tpf = turnPenaltyFactor
 
@@ -80,10 +100,11 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
                 dfEdges = format_edge_df(edges)
                 if dfEdges['num_segments'].max() > 1:
                     break
-                dfEdges, jsonDict, geojson, gpsMatchEdges, gpsMatchShape = synthesize_gps(
-                    dfEdges, shapeCoords, '2768', noise=noise,
-                    sampleRate=sampleRate, turnPenaltyFactor=tpf, beta=beta,
-                    sigmaZ=sigmaZ)
+                dfEdges, jsonDict, geojson, gpsMatchEdges, \
+                    gpsMatchShape = synthesize_gps(
+                        dfEdges, shapeCoords, '2768', noise=noise,
+                        sampleRate=sampleRate, turnPenaltyFactor=tpf,
+                        beta=beta, sigmaZ=sigmaZ)
 
                 if jsonDict is None or geojson is None:
                     msg = "Trace attributes tried to call more" + \
@@ -101,14 +122,28 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
                         [-1] * 14 + [reportUrl]
                     continue
                 segScore, distScore, undermatchScore, undermatchLenScore, \
-                    overmatchScore, overmatchLenScore = get_match_scores(
+                    overmatchScore, overmatchLenScore, matchedDensities, \
+                    unmatchedDensities = get_match_scores(
                         segments, dfEdges, gpsMatchEdges)
+                for density in matchedDensities:
+                    tempDf = pd.DataFrame(
+                        [[density, sampleRate, noise, True]],
+                        columns=['density', 'sample_rate', 'noise', 'matched'])
+                    densityDf = densityDf.append(tempDf, ignore_index=True)
+                for density in unmatchedDensities:
+                    tempDf = pd.DataFrame(
+                        [[density, sampleRate, noise, False]],
+                        columns=['density', 'sample_rate', 'noise', 'matched'])
+                    densityDf = densityDf.append(tempDf, ignore_index=True)
+
                 edgeSpeedScore, pctTooFastEdges, pctTooSlowEdges, \
                     segSpeedScore, pctTooFastSegs, pctTooSlowSegs, \
                     segMatchSpeedScore, segMissSpeedScore, \
                     segSpeedDf = get_speed_scores(
                         gpsMatchEdges, dfEdges, segments, sampleRate)
-                if len(segSpeedDf) < 1:
+                if segSpeedDf is None:
+                    continue
+                elif len(segSpeedDf) < 1:
                     continue
                 segSpeedDf.loc[:, 'route_name'] = routeName
                 segSpeedDf.loc[:, 'sample_rate'] = sampleRate
@@ -197,7 +232,7 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
                             stName, endName, str(noise), str(Hz)), 'w+') as fp:
                                 json.dump(geojson, fp)
 
-    return df, speedDf
+    return df, speedDf, densityDf
 
 
 def plot_segment_match_boxplots(df, sampleRates, saveFig=True):
@@ -246,6 +281,9 @@ def plot_distance_metrics(df, sampleRates, saveFig=True):
     ax.set_ylabel('Match Error Rate', fontsize=15)
     if saveFig:
         fig.savefig('match_errors_by_sample_rate.png')
+
+
+# def plot_distance_metrics_comparison(df1, df2, sampleRates, saveFig=True)
 
 
 def get_optimal_speed_error_threshold(speedDf, plot=True, saveFig=True):
@@ -415,7 +453,8 @@ def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
                         segments, reportUrl = get_reporter_segments(jsonDict)
                         segScore, distScore, undermatchScore, \
                             undermatchLenScore, overmatchScore, \
-                            overmatchLenScore = get_match_scores(
+                            overmatchLenScore, matchedDensities, \
+                            unmatchedDensities = get_match_scores(
                                 segments, dfEdges, gpsMatchEdges)
                         df.loc[outDfRow, 'score'] = distScore
         df['score'] = df['score'].astype(float)
@@ -427,7 +466,8 @@ def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
                 index=False)
 
 
-def plot_param_scores(paramDf, sampleRates, noiseLevels, betaVals, sigmaZVals):
+def plot_param_scores(paramDf, sampleRates, noiseLevels, betaVals, sigmaZVals,
+                      saveFig=True):
     fig, axarr = plt.subplots(
         nrows=len(sampleRates), ncols=len(noiseLevels),
         sharex=True, sharey=True, figsize=(16, 16))
@@ -486,56 +526,11 @@ def plot_param_scores(paramDf, sampleRates, noiseLevels, betaVals, sigmaZVals):
     ax.set_title(
         'Segment Match Error (distance traveled)'
         ' \n by Sample Rate', fontsize=20, y=1.04)
+    if saveFig:
+        fig.savefig('hmm_param_sweep.png')
     plt.show()
 
     return paramDict
-    # nrows = int(np.ceil(len(sampleRates) / 2))
-    # fig, axarr = plt.subplots(
-    #     nrows=nrows, ncols=min(len(sampleRates), 2),
-    #     sharex=True, sharey=True, figsize=(16, 16))
-
-    # if (len(sampleRates) > 1) & (len(sampleRates) % 2):
-    #     axarr[-1, -1].axis('off')
-    # for r, rate in enumerate(sampleRates):
-    #     if len(sampleRates) > 1:
-    #         ax = axarr.flat[r]
-    #     else:
-    #         ax = axarr
-    #     df = paramDf[paramDf['sample_rate'] == rate]
-    #     betaScores = df.groupby('beta').agg('mean').reset_index()
-    #     sigmaZScores = df.groupby('sigma_z').agg('mean').reset_index()
-    #     scores = np.ones((len(betaScores), len(sigmaZScores)))
-    #     for i, beta in enumerate(betaVals):
-    #         for j, sigmaZ in enumerate(sigmaZVals):
-    #             scores[i, j] = df.loc[
-    #                 (df['beta'] == beta) &
-    #                 (df['sigma_z'] == sigmaZ), 'score'].values[0]
-    #     im = ax.imshow(
-    #         scores, interpolation='None', cmap='RdYlGn_r', vmin=0,
-    #         vmax=paramDf['score'].quantile(0.8),
-    #         extent=[0, max(sigmaZVals), max(betaVals), 0])
-    #     ax.set_xticks([beta for beta in betaVals if not beta % 1])
-    #     ax.set_yticks([sigmaZ for sigmaZ in sigmaZVals if not sigmaZ % 1])
-    #     ax.set_xticklabels([
-    #         int(beta) for beta in betaVals if not beta % 1])
-    #     ax.set_yticklabels([
-    #         int(sigmaZ) for sigmaZ in sigmaZVals if not sigmaZ % 1])
-    #     ax.set_adjustable('box-forced')
-    #     hz = str(round(1 / rate, 2))
-    #     ax.set_title(hz + ' Hz')
-
-    # fig.subplots_adjust(right=0.8)
-    # cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-    # fig.colorbar(im, cax=cbar_ax)
-    # ax = fig.add_subplot(111, frameon=False)
-    # plt.tick_params(
-    #     labelcolor='none', top='off', bottom='off', left='off', right='off')
-    # ax.set_xlabel('beta', fontsize=15)
-    # ax.set_ylabel('sigma-z', fontsize=15)
-    # ax.set_title(
-    #     'Segment Match Error (distance traveled)'
-    #     ' \n by Sample Rate', fontsize=20, y=1.04)
-    # plt.show()
 
 
 def get_optimal_params(paramDict, sampleRateStr, noiseLevelStr):
@@ -568,6 +563,7 @@ def plot_pattern_failure(matchDf, sampleRates, noiseLevels):
             min(noiseLevels), max(noiseLevels), max(sampleRates),
             min(sampleRates)], cmap='YlOrRd')
 
+        ax.grid(b='off')
         ax.set_yticks(
             np.linspace(yFrac, max(sampleRates) - yFrac, len(sampleRates)))
         ax.set_yticklabels(map(str, (map(int, sampleRates))))
@@ -586,6 +582,127 @@ def plot_pattern_failure(matchDf, sampleRates, noiseLevels):
     ax.set_ylabel('Sample Rate (s)', fontsize=15)
     ax.xaxis.set_label_coords(0.5, -0.01)
     plt.show()
+
+
+def plot_density_kdes(densityDf):
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.kdeplot(
+        densityDf.loc[densityDf['matched'] == True, 'density'], color='blue',
+        shade=True, bw=1, label='matched segments', ax=ax)
+    sns.kdeplot(
+        densityDf.loc[densityDf['matched'] == False, 'density'], color='red',
+        shade=True, bw=1, label='unmatched segments', ax=ax)
+    avgMatchDens = densityDf.loc[
+        densityDf['matched'] == True, 'density'].mean()
+    avgUnmatchDens = densityDf.loc[
+        densityDf['matched'] == False, 'density'].mean()
+    minY, maxY = ax.get_ybound()
+    ax.vlines(avgMatchDens, minY, maxY, 'b', '--', linewidth=1.25,
+              label='mean density: \nmatched segments')
+    ax.vlines(avgUnmatchDens, minY, maxY, 'r', '--', linewidth=1.25,
+              label='mean density: \nunmatched segments')
+    ax.set_xlabel('Road Network Density', fontsize=15)
+    ax.legend()
+    ax.set_title('Distribution of Road Network Densities'
+                 ' by Segment Match Type', fontsize=20)
+
+
+def plot_density_kdes_gridded(densityDf, saveFig=True):
+    sns.set_style({'font.family': ['DejaVu Sans'],
+                   'axes.facecolor': 'white',
+                   'axes.grid': False,
+                   'axes.edgecolor': 'black',
+                   'axes.labelsize': 10,
+                   'xtick.major.size': 5,
+                   'xtick.direction': 'out',
+                   'ytick.major.size': 5,
+                   'ytick.direction': 'out',
+                   'axes.linewidth': 1,
+                   'xtick.labelsize': 10,
+                   'ytick.labelsize': 10,
+                   'axes.labelpad': 5,
+                   'axes.ymargin': .1,
+                   'axes.titlepad': -15})
+    g = sns.FacetGrid(
+        densityDf, hue='matched', palette={True: 'blue', False: 'red'},
+        col='noise', row='sample_rate')
+    g = g.map(sns.kdeplot, 'density', bw=1, shade=True)
+    g.set_titles("Noise: {col_name} m \n Sample Rate: {row_name} s", size=13)
+    g.fig.suptitle('$\longleftarrow$ less noise', fontsize=23, x=.55, y=.95)
+    g.fig.text(0.04, 0.5, 'faster sample rate $\longrightarrow$', ha='center',
+               va='center', rotation='vertical', fontsize=23)
+
+    g.fig.subplots_adjust(top=.9, left=0.1)
+    for i, ax in enumerate(g.axes[:, 0]):
+        if i == 0:
+            ax.legend(loc='center left', title='Matched')
+
+    if saveFig:
+        g.savefig('density_kdes_gridded.png')
+
+
+def plot_density_regressions(freqDf, saveFig=True):
+    sns.set_style({
+        'font.family': ['DejaVu Sans'],
+        'axes.facecolor': 'white',
+        'axes.grid': False,
+        'axes.edgecolor': 'black',
+        'axes.labelsize': 20,
+        'xtick.major.size': 5,
+        'xtick.direction': 'out',
+        'ytick.major.size': 5,
+        'ytick.direction': 'out',
+        'axes.linewidth': 1,
+        'xtick.labelsize': 15,
+        'ytick.labelsize': 15,
+        'axes.labelpad': 15,
+        'axes.titlepad': -45})
+    g = sns.lmplot(
+        x='density', y='frequency', data=freqDf[freqDf['matched'] == False],
+        col='noise', row='sample_rate', hue='noise', palette='viridis', ci=95)
+    g.set_titles("Noise: {col_name} m \n Sample Rate: {row_name} s", size=22)
+    g.fig.suptitle('$\longleftarrow$ less noise', fontsize=35, x=.55, y=.95)
+    g.fig.text(
+        0.04, 0.5, 'faster sample rate $\longrightarrow$', ha='center',
+        va='center', rotation='vertical', fontsize=35)
+    g.fig.subplots_adjust(top=.9, left=0.1)
+    for i, ax in enumerate(g.axes[:, 0]):
+        ax.set_ylabel('% mismatched \nsegments')
+
+    if saveFig:
+        g.savefig('density_regressions.png')
+
+
+def plot_interactive_densities(stdizedDensityDf):
+    data = [
+        go.Parcoords(
+            line=dict(color=stdizedDensityDf['noise']),
+            dimensions=list([
+                dict(
+                    constraintrange=[6, 8],
+                    label='Road Network Density',
+                    values=stdizedDensityDf['density'],
+                    tickvals=stdizedDensityDf['density'].unique()),
+                dict(
+                    constraintrange=[1, 30],
+                    label='Sample Rate (s)',
+                    values=stdizedDensityDf['sample_rate'],
+                    tickvals=stdizedDensityDf['sample_rate'].unique()),
+                dict(
+                    constraintrange=[0, 100],
+                    label='Noise (m)',
+                    values=stdizedDensityDf['noise'],
+                    tickvals=stdizedDensityDf['noise'].unique()),
+                dict(
+                    label='Standardized Error Rate',
+                    values=stdizedDensityDf['match_rate_normed'])
+            ]),
+            opacity=0.5,
+            labelfont=dict(size=13)
+        )
+    ]
+
+    py.iplot(data, filename='parcoords-advanced')
 
 
 def convert_coords_to_meters(coords, localEpsg, inputOrder='lonlat'):
@@ -659,7 +776,10 @@ def get_coords_per_second(shapeCoords, edges, localEpsg):
         if (beginShapeIndex >= len(coords) - 1) | \
            (endShapeIndex >= len(coords)):
             continue
-        line = LineString(projCoords[beginShapeIndex:endShapeIndex + 1])
+        if len(projCoords[beginShapeIndex:endShapeIndex + 1]) < 2:
+            continue
+        else:
+            line = LineString(projCoords[beginShapeIndex:endShapeIndex + 1])
         seconds = 0
         while mPerSec * seconds < distMeters:
             seconds += 1
@@ -680,7 +800,9 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
                    mode="auto", turnPenaltyFactor=0, breakageDist=2000, beta=3,
                    sigmaZ=4.07, searchRadius=50):
 
-    accuracy = round(min(100, norm.ppf(0.95, loc=0, scale=max(1, noise))), 2)
+    # N.B. - in these scheme we are treating noise level as a noise CEILING
+    # rather than an average level of noise
+
     mProj = Proj(init='epsg:{0}'.format(localEpsg))
     llProj = Proj(init='epsg:4326')
     jsonDict = {
@@ -691,8 +813,7 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
             "breakage_distance": breakageDist,
             "beta": beta,
             "sigma_z": sigmaZ,
-            "search_radius": searchRadius,
-            "gps_accuracy": accuracy}}
+            "gps_accuracy": noise}}
     trueRouteCoords = []
     resampledCoords = []
     gpsRouteCoords = []
@@ -704,6 +825,8 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
     seconds = 0
     shapeIndexCounter = 0
     for i, edge in dfEdges.iterrows():
+        if type(edge['oneSecCoords']) == float:
+            continue
         if i == 0:
             trueCoords = shapeCoords[edge['begin_shape_index']]
             trueRouteCoords.append(trueCoords)
@@ -720,8 +843,16 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
                 if noise > 0:
                     projLon, projLat = transform(llProj, mProj, lon, lat)
                     while True:
-                        lonAdj = np.random.normal(scale=noise)
-                        latAdj = np.random.normal(scale=noise)
+                        lonAdj = np.random.uniform(-1, 1)
+                        latAdj = np.random.uniform(-1, 1)
+                        totNoise = np.sqrt(lonAdj**2 + latAdj**2)
+                        lonAdj /= totNoise    # norm
+                        latAdj /= totNoise    # norm
+                        scale = np.random.uniform(0, 1)    # noise is really 
+                        lonAdj *= scale * noise
+                        latAdj *= scale * noise
+                        # lonAdj = np.random.normal(scale=noise)
+                        # latAdj = np.random.normal(scale=noise)
                         if shapeIndexCounter == 0:
                             noiseQuad = [np.sign(lonAdj), np.sign(latAdj)]
                             break
@@ -751,7 +882,7 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
 
     gpsShape = [{"lat": d["lat"], "lon": d["lon"]} for d in jsonDict['trace']]
     gpsMatchEdges, gpsMatchPts, gpsMatchShape, _ = get_trace_attrs(
-        gpsShape, encoded=False, gpsAccuracy=accuracy, mode=mode,
+        gpsShape, encoded=False, gpsAccuracy=noise, mode=mode,
         turnPenaltyFactor=turnPenaltyFactor, breakageDist=breakageDist,
         beta=beta, sigmaZ=sigmaZ, searchRadius=searchRadius)
 
@@ -820,7 +951,7 @@ def get_trace_attrs(shape, encoded=True, shapeMatch='map_snap',
 
     jsonDict = {
         shapeParam: shape,
-        "costing": "auto",
+        "costing": mode,
         "shape_match": shapeMatch,
         "trace_options": {
             "gps_accuracy": gpsAccuracy,
@@ -845,7 +976,8 @@ def format_edge_df(edges):
     dfEdges = pd.DataFrame(edges)
     dfEdges = dfEdges[[
         'id', 'begin_shape_index', 'end_shape_index', 'length',
-        'speed', 'density', 'traffic_segments', 'oneSecCoords']]
+        'speed', 'density', 'traffic_segments',
+        'oneSecCoords']]
     dfEdges['segment_id'] = dfEdges['traffic_segments'].apply(
         lambda x: str(x[0]['segment_id']) if type(x) is list else None)
     dfEdges['num_segments'] = dfEdges['traffic_segments'].apply(
@@ -907,8 +1039,12 @@ def get_match_scores(segments, dfEdges, gpsMatchEdges):
         dfEdges.loc[undermatchMask, 'length'])
     undermatchLenScore = undermatchLen / distTraveled
     lenScore = (overmatchLen + undermatchLen) / distTraveled
+
+    matchedDensities = list(dfEdges.loc[edgeMatches, 'density'].values)
+    unmatchedDensities = list(dfEdges.loc[~edgeMatches, 'density'].values)
+
     return segScore, lenScore, undermatchScore, undermatchLenScore, \
-        overmatchScore, overmatchLenScore
+        overmatchScore, overmatchLenScore, matchedDensities, unmatchedDensities
 
 
 def get_speed_scores(gpsMatchEdges, dfEdges, segments, sampleRate):
@@ -942,10 +1078,14 @@ def get_speed_scores(gpsMatchEdges, dfEdges, segments, sampleRate):
         pctTooFastEdges, pctTooSlowEdges = None, None
 
     segDf = pd.DataFrame(segments)
+    if 'segment_id' not in segDf.columns:
+        return edgeSpeedScore, pctTooFastEdges, pctTooSlowEdges, \
+            None, None, None, None, None, None
     segDf = segDf[(
         ~pd.isnull(segDf['segment_id'])) & (
         segDf['end_time'] != -1) & (
-        segDf['start_time'] != -1)]
+        segDf['start_time'] != -1) & (
+        segDf['length'] != -1)]
     segDf['speed'] = segDf['length'] / (
         segDf['end_time'] - segDf['start_time']) * 3.6
     segDf['segment_id'] = segDf['segment_id'].astype(int).astype(str)
@@ -961,7 +1101,11 @@ def get_speed_scores(gpsMatchEdges, dfEdges, segments, sampleRate):
         dfEdges['segment_id'])
 
     # THIS IS THE PART THAT MIGHT BE PROBLEMATIC
-    # THE INNER JOIN IS THROWING OUT 
+    # THE INNER JOIN IS THROWING OUT SEGMENTS THAT 
+    # WERE NOT IN BOTH THE ORIGINAL GPS ROUTE TRACE_ATTRS 
+    # RESPONSE IN LINE 709 AND ALSO THE REPORTER SEGMENT
+    # RESPONSE IN LINE 95. WHY SHOULD THERE BE ANY DISCREPANCY
+    # IN THE FIRST PLACE?
     segSpeeds = pd.merge(
         osmSegSpeeds, gpsSegSpeeds, on='segment_id', how='inner',
         suffixes=('_osm', '_gps'))
@@ -1125,12 +1269,15 @@ def generate_route_map(pathToGeojsonOrFeatureCollection, zoomLevel=11):
         trueRouteCoords, resampledCoords, gpsRouteCoords, \
             displacementLines, gpsMatchShape, tooFastSegs, okSegs, \
             notMatchedSegs = data['features']
+        g = GeoJSON(data=FeatureCollection([
+            trueRouteCoords, gpsMatchShape,
+            tooFastSegs, okSegs, notMatchedSegs]))
     else:
         trueRouteCoords, resampledCoords, gpsRouteCoords, \
             displacementLines, gpsMatchShape = data['features']
-    g = GeoJSON(data=FeatureCollection([
-        trueRouteCoords, gpsMatchShape,
-        tooFastSegs, okSegs, notMatchedSegs]))
+        g = GeoJSON(data=FeatureCollection([
+            trueRouteCoords, gpsMatchShape]))
+
     m.add_layer(g)
     for coords in resampledCoords['geometry']['coordinates']:
         cm = Circle(
@@ -1201,3 +1348,200 @@ def checkForBackTrack(lastSegCoords, newPoint, noise):
         return True, bl
     else:
         return False, bl
+
+
+def computeTrackAddictSpeedErrs(dataDir):
+    outDf = pd.DataFrame(columns=[
+        'route_num', 'Time', 'Latitude', 'Longitude', 'obd_speed',
+        'gps_speed', 'osm_speed', 'pct_error'])
+    allFiles = glob.glob(dataDir + "/*.csv")
+    for f, file_ in enumerate(allFiles):
+        print('Processing {0}'.format(file_))
+        routeData = pd.read_csv(file_, skiprows=2)
+        if "Vehicle Speed (km/h) *OBD" in routeData.columns:
+            routeData.rename(columns={
+                'Vehicle Speed (km/h) *OBD': 'obd_speed',
+                'Speed (KM/H)': 'gps_speed'}, inplace=True)
+        else:
+            routeData.rename(columns={
+                'Speed (KM/H)': 'gps_speed'}, inplace=True)
+        minMaxTimeIDs = routeData[['Time', 'Latitude', 'Longitude']].groupby(
+            ['Latitude', 'Longitude']).agg(
+                {'Time': {
+                    'max_time': 'idxmax',
+                    'min_time': 'idxmin'}}).values.flatten()
+        minMaxTimeIDs.sort()
+        if 'obd_speed' in routeData.columns:
+            simplifiedRouteData = routeData.loc[minMaxTimeIDs, [
+                'Time', 'Latitude', 'Longitude', 'Accuracy (m)',
+                'obd_speed', 'gps_speed'
+            ]].reset_index(drop=True)
+        else:
+            simplifiedRouteData = routeData.loc[minMaxTimeIDs, [
+                'Time', 'Latitude', 'Longitude', 'Accuracy (m)',
+                'gps_speed'
+            ]].reset_index(drop=True)
+        simplifiedRouteData['edge_idx'] = None
+        if 'obd_speed' in simplifiedRouteData.columns:
+            simplifiedRouteData = simplifiedRouteData.loc[
+                simplifiedRouteData['obd_speed'] != 0].reset_index(
+                    drop=True)
+
+        uuid = '999999'
+        shapeMatch = 'map_snap'
+        mode = 'auto'
+        turnPenaltyFactor = 500
+        breakageDist = 2000
+        beta = 3
+        sigmaZ = 4.07
+        searchRadius = 50
+        accuracy = 50
+        jsonDict = {
+            "uuid": uuid, "trace": [], "shape_match": shapeMatch,
+            "match_options": {
+                "mode": mode,
+                "turn_penalty_factor": turnPenaltyFactor,
+                "breakage_distance": breakageDist,
+                "beta": beta,
+                "sigma_z": sigmaZ,
+                "search_radius": searchRadius,
+                "gps_accuracy": accuracy}}
+        sttm = int(t.time()) - 86400
+
+        gpsShape = []
+        for i, row in simplifiedRouteData.iterrows():
+            if not np.isnan(row['Latitude']):
+
+                time = sttm + float(row['Time'])
+                jsonDict['trace'].append({
+                    "lat": round(row['Latitude'], 6),
+                    "lon": round(row['Longitude'], 6),
+                    "time": time
+                })
+                gpsShape.append({
+                    "lat": round(row['Latitude'], 6),
+                    "lon": round(row['Longitude'], 6)
+                })
+
+        gpsMatchEdges, gpsMatchPts, gpsMatchShape, _ = get_trace_attrs(
+            gpsShape, encoded=False, gpsAccuracy=accuracy, mode=mode,
+            turnPenaltyFactor=turnPenaltyFactor, breakageDist=breakageDist,
+            beta=beta, sigmaZ=sigmaZ, searchRadius=searchRadius)
+
+        gpsEdgeSpeeds = pd.DataFrame([(
+            edge['id'], edge['begin_shape_index'], edge['end_shape_index'],
+            edge['speed']) for edge in gpsMatchEdges],
+            columns=[
+                'id', 'begin_shape_index', 'end_shape_index', 'osm_speed'])
+
+        for i, matchPt in enumerate(gpsMatchPts):
+            if 'edge_index' in matchPt.keys():
+                simplifiedRouteData.loc[i, 'edge_idx'] = matchPt['edge_index']
+
+        merged = pd.merge(
+            simplifiedRouteData, gpsEdgeSpeeds[['osm_speed']],
+            left_on='edge_idx', right_index=True)
+
+        merged['pct_error_gps'] = (
+            merged['gps_speed'] - merged['osm_speed']) / merged['osm_speed']
+        merged['pct_error_gps'] = merged['pct_error_gps'].round(3)
+        merged['route_num'] = f
+        if 'obd_speed' in simplifiedRouteData.columns:
+            merged['pct_error_obd'] = (
+                merged['obd_speed'] - merged['osm_speed']) / \
+                merged['osm_speed']
+            merged['pct_error_obd'] = merged['pct_error_obd'].round(3)
+            outDf = pd.concat(
+                (outDf, merged[[
+                    'route_num', 'Time', 'Latitude', 'Longitude', 'obd_speed',
+                    'gps_speed', 'osm_speed', 'pct_error_obd',
+                    'pct_error_gps']]),
+                ignore_index=True)
+        else:
+            outDf = pd.concat(
+                (outDf, merged[[
+                    'route_num', 'Time', 'Latitude', 'Longitude', 'gps_speed',
+                    'osm_speed', 'pct_error_gps']]),
+                ignore_index=True)
+
+    return outDf
+
+
+def plotSpeedErrCDFs(errDf, regionName, saveFig=True):
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.kdeplot(
+        errDf['pct_error_gps'].values, color='r', cumulative=True,
+        label='GPS-based speed error')
+    if 'obd_speed' in errDf.columns:
+        sns.kdeplot(
+            errDf['pct_error_obd'].values, color='b', cumulative=True,
+            label='OBD-based speed error')
+    ax.set_xlabel("% Error", fontsize=15)
+    ax.set_title(
+        "Cumulative Distribution of % Error in\nSpeeds Driven "
+        "vs. Valhalla Edge Speeds: \n{0} Routes Driven in {1}".format(
+            int(errDf['route_num'].max() + 1), regionName),
+        fontsize=20)
+    if saveFig:
+        fig.savefig('images/OBD_measured_routes_cdf.png')
+
+
+def plotDrivenVsValhallaScatter(errDf, regionName, saveFig=True):
+    fig, ax = plt.subplots(figsize=(12, 8))
+    errDf.rename(columns={'osm_speed': 'valhalla_speed'}, inplace=True)
+    if 'obd_speed' in errDf.columns:
+        speedCol = 'obd_speed'
+        errCol = 'pct_error_obd'
+    else:
+        speedCol = 'gps_speed'
+        errCol = 'pct_error_gps'
+    sns.regplot(
+        errDf.loc[errDf[errCol] > 0, 'valhalla_speed'],
+        errDf.loc[errDf[errCol] > 0, speedCol],
+        fit_reg=False, x_jitter=2, y_jitter=2, label='Speed Driven > Valhalla',
+        scatter_kws={
+            's': 150, 'facecolor': 'none', 'edgecolor': 'r',
+            'linewidth': 0.25, 'alpha': 0.7})
+    sns.regplot(
+        errDf.loc[errDf[errCol] <= 0, 'valhalla_speed'],
+        errDf.loc[errDf[errCol] <= 0, speedCol],
+        fit_reg=False, x_jitter=2, y_jitter=2, label='Speed Driven < Valhalla',
+        scatter_kws={
+            's': 150, 'facecolor': 'none', 'edgecolor': 'b',
+            'linewidth': 0.25, 'alpha': 0.7})
+    ax.set_ylabel('Speed Driven (km/h)', fontsize=15)
+    ax.set_xlabel('Valhalla Speed (km/h)', fontsize=15)
+    ax.plot(np.arange(ax.get_xbound()[0], ax.get_xbound()[1]),
+            np.arange(ax.get_xbound()[0], ax.get_xbound()[1]),
+            '-', color='black', label='0% error')
+    ax.legend()
+    ax.set_title(
+        "Speeds Driven vs. Valhalla Edge Speeds: "
+        "\n{0} Routes Driven in {1}".format(
+            int(errDf['route_num'].max() + 1), regionName),
+        fontsize=20)
+    if saveFig:
+        fig.savefig('images/speed_error_scatter.png')
+
+
+def plotOBDVsGPSScatter(errDf, regionName, saveFig=True):
+    fig, ax = plt.subplots(figsize=(12, 8))
+    errDf.rename(columns={'osm_speed': 'valhalla_speed'}, inplace=True)
+    assert 'obd_speed' in errDf.columns
+
+    sns.regplot(
+        errDf['obd_speed'],
+        errDf['gps_speed'],
+        fit_reg=False, x_jitter=2, y_jitter=2,
+        scatter_kws={
+            's': 50, 'facecolor': 'none', 'edgecolor': 'r',
+            'linewidth': 0.25, 'alpha': 1})
+
+    ax.set_ylabel('GPS-based Speed (km/h)', fontsize=15)
+    ax.set_xlabel('OBD-based Speed (km/h)', fontsize=15)
+    ax.set_title(           
+        "\n{0} Routes Driven in {1}".format(
+            int(errDf['route_num'].max() + 1), regionName),
+        fontsize=20)
+    if saveFig:
+        fig.savefig('images/obd_vs_gps.png')
