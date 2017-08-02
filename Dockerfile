@@ -56,6 +56,8 @@ RUN conda install --quiet --yes \
     'scipy=0.17*' \ 
     'Shapely=1.5*' \
     'seaborn=0.7*' \
+    'plotly' \ 
+    'osmnx' \ 
     'paramiko' && \
     conda clean -tipsy
 
@@ -75,6 +77,8 @@ RUN conda create --quiet --yes -p $CONDA_DIR/envs/python2 python=2.7 \
     'scipy=0.17*' \
     'Shapely=1.5*' \
     'seaborn=0.7*' \
+    'plotly' \ 
+    'osmnx' \
     'paramiko' && \
     conda clean -tipsy
 
