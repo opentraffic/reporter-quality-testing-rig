@@ -82,6 +82,8 @@ RUN conda create --quiet --yes -p $CONDA_DIR/envs/python2 python=2.7 \
     'paramiko' && \
     conda clean -tipsy
 
+RUN conda install --quiet --yes -p $CONDA_DIR/envs/python2 -c conda-forge ipycache 
+
 # Add shortcuts to distinguish pip for python2 and python3 envs
 RUN ln -s $CONDA_DIR/envs/python2/bin/pip $CONDA_DIR/bin/pip2 && \
     ln -s $CONDA_DIR/bin/pip $CONDA_DIR/bin/pip3
