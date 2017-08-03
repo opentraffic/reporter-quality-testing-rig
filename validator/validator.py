@@ -802,7 +802,7 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
 
     # N.B. - in these scheme we are treating noise level as a noise CEILING
     # rather than an average level of noise
-
+    accuracy = round(norm.ppf(0.95, loc=0, scale=max(1, noise)), 2)
     mProj = Proj(init='epsg:{0}'.format(localEpsg))
     llProj = Proj(init='epsg:4326')
     jsonDict = {
@@ -812,8 +812,8 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
             "turn_penalty_factor": turnPenaltyFactor,
             "breakage_distance": breakageDist,
             "beta": beta,
-            "sigma_z": sigmaZ,
-            "gps_accuracy": noise}}
+            "sigma_z": sigmaZ
+            "gps_accuracy": accuracy}}
     trueRouteCoords = []
     resampledCoords = []
     gpsRouteCoords = []
@@ -848,11 +848,9 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
                         totNoise = np.sqrt(lonAdj**2 + latAdj**2)
                         lonAdj /= totNoise    # norm
                         latAdj /= totNoise    # norm
-                        scale = np.random.uniform(0, 1)    # noise is really 
-                        lonAdj *= scale * noise
-                        latAdj *= scale * noise
-                        # lonAdj = np.random.normal(scale=noise)
-                        # latAdj = np.random.normal(scale=noise)
+                        scale = np.random.normal(scale=noise) 
+                        lonAdj *= scale
+                        latAdj *= scale
                         if shapeIndexCounter == 0:
                             noiseQuad = [np.sign(lonAdj), np.sign(latAdj)]
                             break
