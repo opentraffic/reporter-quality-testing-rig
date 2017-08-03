@@ -812,7 +812,7 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
             "turn_penalty_factor": turnPenaltyFactor,
             "breakage_distance": breakageDist,
             "beta": beta,
-            "sigma_z": sigmaZ
+            "sigma_z": sigmaZ,
             "gps_accuracy": accuracy}}
     trueRouteCoords = []
     resampledCoords = []
