@@ -276,7 +276,7 @@ def plot_distance_metrics(df, sampleRates, saveFig=True):
                 axarr[i, j].plot(
                     data.loc[data['sample_rate'] == rate, 'noise'],
                     data.loc[data['sample_rate'] == rate, metric],
-                    label=str(round(1 / rate, 3)) + ' Hz', alpha=0.7,
+                    label=str(rate) + ' S', alpha=0.7,
                     color=colors[k])
             axarr[i, j].legend(title='Sample Rate')
             axarr[i, j].set_title(title)
