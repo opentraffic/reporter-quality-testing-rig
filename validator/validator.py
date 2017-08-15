@@ -1261,7 +1261,8 @@ def generate_route_map(pathToGeojsonOrFeatureCollection, zoomLevel=11):
         data = pathToGeojsonOrFeatureCollection
     ctrLon, ctrLat = np.mean(
         np.array(data['features'][0]['geometry']['coordinates']), axis=0)
-    url = "http://stamen-tiles-{s}.a.ssl.fastly.net/toner-lite/{z}/{x}/{y}.png"
+    url = "https://cartodb-basemaps-{s}" + \
+        ".global.ssl.fastly.net/light_all/{z}/{x}/{y}.png"
     provider = TileLayer(url=url, opacity=1)
     center = [ctrLat, ctrLon]
     m = Map(default_tiles=provider, center=center, zoom=zoomLevel)
