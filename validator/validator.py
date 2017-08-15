@@ -1283,13 +1283,13 @@ def generate_route_map(pathToGeojsonOrFeatureCollection, zoomLevel=11):
     m.add_layer(g)
     for coords in resampledCoords['geometry']['coordinates']:
         cm = Circle(
-            location=coords[::-1], radius=10, weight=1, color='#ff9900',
-            opacity=1.0, fill_opacity=0.6, fill_color='#ff9900')
+            location=coords[::-1], radius=10, weight=1, color='#0000ff',
+            opacity=1.0, fill_opacity=0.6, fill_color='#0000ff')
         m.add_layer(cm)
     for coords in gpsRouteCoords['geometry']['coordinates']:
         cm = Circle(
-            location=coords[::-1], radius=10, weight=1, color='#0000ff',
-            opacity=1.0, fill_opacity=0.4, fill_color='#0000ff')
+            location=coords[::-1], radius=10, weight=1, color='#ff0000',
+            opacity=1.0, fill_opacity=0.4, fill_color='#ff0000')
         m.add_layer(cm)
     g = GeoJSON(data=displacementLines)
     m.add_layer(g)
