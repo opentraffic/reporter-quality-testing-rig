@@ -256,13 +256,20 @@ def plot_distance_metrics(df, sampleRates, saveFig=True):
     cmap = plt.get_cmap('RdYlBu_r')
     colors = cmap(norm(sampleRates))
     distance_metrics = [
-        'segments', 'distance traveled', 'undermatches',
-        'undermatch distance', 'overmatches', 'overmatch distance']
+        'segments', 'distance traveled',
+        'overmatches', 'overmatch distance', 'undermatches',
+        'undermatch distance']
+    titles = [
+        'Type I/II Err. Rate', 'Type I/II Distance-based Err.',
+        'Type I Err. Rate', 'Type I Distance-based Err.',
+        'Type II Err. Rate', 'Type II Distance-based Err.']
     metricArr = np.asarray(distance_metrics).reshape((3, 2))
+    titleArr = np.asarray(titles).reshape((3, 2))
     fig, axarr = plt.subplots(3, 2, sharex=True, figsize=(16, 16))
     for i, row in enumerate(axarr):
         for j, col in enumerate(row):
             metric = metricArr[i, j]
+            title = titleArr[i, j]
             data = df[['noise', metric, 'sample_rate']].groupby(
                 ['sample_rate', 'noise']).agg('median').reset_index()
             for k, rate in enumerate(sampleRates):
@@ -272,7 +279,7 @@ def plot_distance_metrics(df, sampleRates, saveFig=True):
                     label=str(round(1 / rate, 3)) + ' Hz', alpha=0.7,
                     color=colors[k])
             axarr[i, j].legend(title='Sample Rate')
-            axarr[i, j].set_title(metric)
+            axarr[i, j].set_title(title)
 
     ax = fig.add_subplot(111, frameon=False)
     plt.tick_params(
@@ -281,9 +288,6 @@ def plot_distance_metrics(df, sampleRates, saveFig=True):
     ax.set_ylabel('Match Error Rate', fontsize=15)
     if saveFig:
         fig.savefig('match_errors_by_sample_rate.png')
-
-
-# def plot_distance_metrics_comparison(df1, df2, sampleRates, saveFig=True)
 
 
 def get_optimal_speed_error_threshold(speedDf, plot=True, saveFig=True):
