@@ -851,7 +851,7 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
                         totNoise = np.sqrt(lonAdj**2 + latAdj**2)
                         lonAdj /= totNoise    # norm
                         latAdj /= totNoise    # norm
-                        scale = np.random.normal(scale=noise) 
+                        scale = np.random.normal(scale=noise)
                         lonAdj *= scale
                         latAdj *= scale
                         if shapeIndexCounter == 0:
@@ -890,13 +890,13 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
     geojson = FeatureCollection([
         Feature(geometry=LineString(
             trueRouteCoords), properties={"style": {
-                "color": "#ff9900",
+                "color": "#0000ff",
                 "weight": "2px"},
                 "opacity": 0.9,
                 "name": "true_route_coords"}),
         Feature(geometry=MultiPoint(
             resampledCoords), properties={"style": {
-                "color": "#ff0000",
+                "color": "#0000ff",
                 "weight": "3px"},
                 "name": "resampled_coords"}),
         Feature(geometry=MultiPoint(
