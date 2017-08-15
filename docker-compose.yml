@@ -36,7 +36,7 @@ services:
     container_name: kafka
 
   valhalla:
-    image: valhalla/docker:1.2.4
+    image: valhalla/docker:ppa-1.2.5
     ports:
       - "8002:8002"
     volumes:
