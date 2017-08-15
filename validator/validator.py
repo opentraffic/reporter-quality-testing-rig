@@ -285,7 +285,6 @@ def plot_distance_metrics(df, sampleRates, saveFig=True):
     plt.tick_params(
         labelcolor='none', top='off', bottom='off', left='off', right='off')
     ax.set_xlabel('Noise (m)', fontsize=15)
-    ax.set_ylabel('Match Error Rate', fontsize=15)
     if saveFig:
         fig.savefig('match_errors_by_sample_rate.png')
 
