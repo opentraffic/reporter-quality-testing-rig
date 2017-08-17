@@ -3,7 +3,7 @@ version: '2'
 services:
 
   reporter:
-    image: opentraffic/reporter:latest
+    image: opentraffic/reporter:07e14cdc91ae7fa2f7361b25e8ec1b1c2d1c1cc1
     networks:
       - opentraffic
     ports:
