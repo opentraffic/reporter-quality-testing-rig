@@ -438,7 +438,7 @@ def plot_change_in_acc(oneSizeFitsAllAcc, rateSpecificAcc, sampleRates,
 def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
                            betaVals, sigmaZVals, turnPenaltyFactor=500,
                            saveResults=True):
-
+    noTrafficSegs = 0
     for i, rteCoords in enumerate(routeList):
         df = pd.DataFrame(
             columns=['sample_rate', 'noise', 'beta', 'sigma_z', 'score'])
@@ -464,7 +464,11 @@ def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
                         df.loc[outDfRow, [
                             'sample_rate', 'noise', 'beta', 'sigma_z']] = [
                                 sampleRate, noise, beta, sigmaZ]
-                        dfEdges = format_edge_df(edges)
+                        try:
+                            dfEdges = format_edge_df(edges)
+                        except KeyError:
+                            noTrafficSegs += 1
+                            continue
                         dfEdges, jsonDict, geojson, gpsMatchEdges, \
                             gpsMatchShape = \
                             synthesize_gps(
@@ -485,7 +489,9 @@ def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
             df.to_csv('../data/{0}_route_{1}_param_scores.csv'.format(
                 cityName, i + 1),
                 index=False)
-
+    print(
+    '{0} route(s) skipped because they contained '
+    'no traffic segments'.format(noTrafficSegs))
 
 def get_param_scores(paramDf, sampleRates, noiseLevels, betaVals, sigmaZVals,
                      plot=True, saveFig=True):
