@@ -11,7 +11,3 @@ OTv2: Docker containers and Jupyter Notebooks for testing Open Traffic Reporter 
 	- `export MAPZEN_API=<your_mapzen_api_key>`
 5. Start the service: `docker-compose up`
 6. Navigate to `localhost:8888` in a browser to explore the pre-configured Jupyter notebooks.
-
-
-### TO DO:
-- Steps 2-5 should soon be obsolete as soon as the latest changes to the Valhalla ppa have been pushed to dockerhub.
