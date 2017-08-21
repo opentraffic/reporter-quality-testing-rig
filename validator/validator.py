@@ -239,7 +239,7 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
                                 json.dump(geojson, fp)
 
     print(
-        '{0} routes skipped because they contained '
+        '{0} route(s) skipped because they contained '
         'no traffic segments'.format(noTrafficSegs))
     return df, speedDf, densityDf
 
