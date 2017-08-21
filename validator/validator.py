@@ -1569,9 +1569,23 @@ def plotOBDVsGPSScatter(errDf, regionName, saveFig=True):
 
     ax.set_ylabel('GPS-based Speed (km/h)', fontsize=15)
     ax.set_xlabel('OBD-based Speed (km/h)', fontsize=15)
-    ax.set_title(           
+    ax.set_title(
         "\n{0} Routes Driven in {1}".format(
             int(errDf['route_num'].max() + 1), regionName),
         fontsize=20)
     if saveFig:
         fig.savefig('images/obd_vs_gps.png')
+
+
+def mergeCsvsToDataFrame(dataDir, matchString):
+
+    allFiles = glob.glob(dataDir + matchString)
+    frame = pd.DataFrame()
+    list_ = []
+    for file_ in allFiles:
+        df = pd.read_csv(file_, index_col=None, header=0)
+        list_.append(df)
+    frame = pd.concat(list_)
+    return frame
+
+
