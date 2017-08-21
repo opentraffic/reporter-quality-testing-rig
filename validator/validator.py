@@ -42,6 +42,8 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
                       speedErrThreshold=None, saveResults=True):
 
     noTrafficSegs = 0
+    noGpsEdges = 0
+
     distance_metrics = [
         'segments', 'distance traveled', 'undermatches',
         'undermatch distance', 'overmatches', 'overmatch distance']
@@ -106,11 +108,15 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
                     continue
                 if dfEdges['num_segments'].max() > 1:
                     break
-                dfEdges, jsonDict, geojson, gpsMatchEdges, \
-                    gpsMatchShape = synthesize_gps(
-                        dfEdges, shapeCoords, '2768', noise=noise,
-                        sampleRate=sampleRate, turnPenaltyFactor=tpf,
-                        beta=beta, sigmaZ=sigmaZ)
+                try:
+                    dfEdges, jsonDict, geojson, gpsMatchEdges, \
+                        gpsMatchShape = synthesize_gps(
+                            dfEdges, shapeCoords, '2768', noise=noise,
+                            sampleRate=sampleRate, turnPenaltyFactor=tpf,
+                            beta=beta, sigmaZ=sigmaZ)
+                except KeyError:
+                    noGpsEdges += 1
+                    continue
 
                 if jsonDict is None or geojson is None:
                     msg = "Trace attributes tried to call more" + \
@@ -241,6 +247,9 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
     print(
         '{0} route(s) skipped because they contained '
         'no traffic segments'.format(noTrafficSegs))
+    print(
+        '{0} route(s) skipped because the synthetic GPS '
+        'returned no Valhalla edges'.format(noGpsEdges))
     return df, speedDf, densityDf
 
 
