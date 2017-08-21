@@ -37,7 +37,7 @@ sns.set_style({
     'ytick.direction': 'out'})
 
 
-def get_route_metrics(routeList, sampleRates, noiseLevels,
+def get_route_metrics(cityName, routeList, sampleRates, noiseLevels,
                       turnPenaltyFactor=500, sigmaZ=4.07, beta=3,
                       speedErrThreshold=None, saveResults=True):
 
@@ -239,9 +239,10 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
 
                 if saveResults:
                     with open(
-                        '../data/trace_{0}_to_{1}_w_{2}'
+                        '../data/{0}_route_{1}_w_{2}'
                         '_m_noise_at_{3}_Hz.geojson'.format(
-                            stName, endName, str(noise), str(Hz)), 'w+') as fp:
+                            cityName, str(i).zfill(len(str(len(routeList)))),
+                            str(noise), str(Hz)), 'w+') as fp:
                                 json.dump(geojson, fp)
 
     print(
@@ -1589,3 +1590,34 @@ def mergeCsvsToDataFrame(dataDir, matchString):
     return frame
 
 
+def plot_err_before_after_optimization(defaultDf, tunedDf):
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.kdeplot(
+        tunedDf['distance traveled'], color='blue',
+        shade=True, bw=0.05, label='optimized params', ax=ax)
+    sns.kdeplot(
+        defaultDf['distance traveled'], color='red',
+        shade=True, bw=0.05, label='default params', ax=ax)
+    minY, maxY = ax.get_ybound()
+    ax.vlines(
+        tunedDf['distance traveled'].median(), minY, maxY, 'b', '--',
+        label='median error: optimized params')
+    ax.vlines(
+        defaultDf['distance traveled'].median(), minY, maxY, 'r', '--',
+        label='median error: default params')
+    ax.set_xlabel('Type I/II Distance-based Error', fontsize=15)
+    ax.annotate(
+        'median error - optimized params: {0}'.format(
+            str(np.round(tunedDf['distance traveled'].median(), 2))),
+        xy=(tunedDf['distance traveled'].median(), 4), xytext=(0.6, 0.75),
+        textcoords='figure fraction', arrowprops=dict(
+            width=0.05, facecolor='black'))
+    ax.annotate(
+        'median error - default params: {0}'.format(
+            str(np.round(defaultDf['distance traveled'].median(), 2))),
+        xy=(defaultDf['distance traveled'].median(), 3), xytext=(0.6, 0.5),
+        textcoords='figure fraction', arrowprops=dict(
+            width=0.05, facecolor='black'))
+    ax.set_title(
+        'Distribution of "A-OK Rides" Map-Matching Error'
+        ' \nBefore and After Parameter Optimization', fontsize=20)
