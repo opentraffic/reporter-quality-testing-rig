@@ -547,9 +547,11 @@ def get_param_scores(paramDf, sampleRates, noiseLevels, betaVals, sigmaZVals,
                 ax.set_xlabel('sigma_z')
     fig.suptitle(
         'Type I/II Distance-based Match Error', fontsize=20, x=.50, y=.96)
-    if len(axarr) > 1:
-        fig.text(0.06, 0.5, 'faster sample rate $\longrightarrow$', ha='center',
-                 va='center', rotation='vertical', fontsize=15)
+    if len(sampleRates) > 1:
+        fig.text(
+            0.06, 0.5, 'faster sample rate $\longrightarrow$',
+            ha='center', va='center', rotation='vertical', fontsize=15)
+    if len(noiseLevels) > 1:
         fig.text(0.5, 0.06, '$\longleftarrow$ less noise', ha='center',
                  va='center', fontsize=15)
     fig.subplots_adjust(wspace=0.5)
