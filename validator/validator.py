@@ -1,4 +1,5 @@
 from __future__ import division
+# from ipywidgets import Layout
 import glob
 import requests
 import time as t
@@ -11,13 +12,13 @@ from geojson import Feature, FeatureCollection
 import itertools
 from pyproj import Proj, transform
 from scipy.stats import norm
-from ipywidgets import Layout
 from ipyleaflet import (
     Map,
     TileLayer,
     Circle,
     GeoJSON
 )
+from ipywidgets import Layout
 from matplotlib import pyplot as plt
 import seaborn as sns
 import plotly.plotly as py
@@ -25,7 +26,7 @@ import plotly.graph_objs as go
 
 
 sns.set_style({
-    'font.family': ['DejaVu Sans'],
+    'font.family': ['Bitstream Vera Sans'],
     'axes.facecolor': 'white',
     'axes.grid': False,
     'axes.linewidth': 1,
@@ -469,11 +470,11 @@ def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
                 index=False)
 
 
-def plot_param_scores(paramDf, sampleRates, noiseLevels, betaVals, sigmaZVals,
-                      saveFig=True):
+def get_param_scores(paramDf, sampleRates, noiseLevels, betaVals, sigmaZVals,
+                     plot=True, saveFig=True):
     fig, axarr = plt.subplots(
         nrows=len(sampleRates), ncols=len(noiseLevels),
-        sharex=True, sharey=True, figsize=(16, 16))
+        sharex=True, sharey=True, figsize=(16, 12))
     paramDict = {}
     for r, rate in enumerate(sampleRates):
         paramDict[str(int(rate))] = {}
@@ -498,41 +499,42 @@ def plot_param_scores(paramDf, sampleRates, noiseLevels, betaVals, sigmaZVals,
             paramDict[str(int(rate))][str(int(noise))]['beta'] = minErrBeta
             paramDict[str(int(rate))][str(int(noise))]['sigma'] = minErrSigma
             im = ax.imshow(
-                scores, interpolation='None', cmap='RdYlGn_r', vmin=0,
+                scores, interpolation='None', cmap='RdYlGn_r',
+                vmin=df['score'].quantile(.02),
                 vmax=df['score'].quantile(.98),
                 extent=[min(sigmaZVals), max(sigmaZVals),
                         max(betaVals), min(betaVals)])
             plt.colorbar(im, ax=ax, fraction=0.04)
-            ax.set_yticks([beta for beta in betaVals if not beta % 1])
-            ax.set_xticks([sigmaZ for sigmaZ in sigmaZVals if not sigmaZ % 1])
+            ax.set_yticks([beta for beta in betaVals if not beta % 2])
+            ax.set_xticks([sigmaZ for sigmaZ in sigmaZVals if not sigmaZ % 2])
             ax.set_yticklabels([
-                int(beta) for beta in betaVals if not beta % 1])
+                int(beta) for beta in betaVals if not beta % 2])
             ax.set_xticklabels([
-                int(sigmaZ) for sigmaZ in sigmaZVals if not sigmaZ % 1])
+                int(sigmaZ) for sigmaZ in sigmaZVals if not sigmaZ % 2])
             ax.set_adjustable('box-forced')
-
-    cols = [str(noise) + ' m Noise' for noise in noiseLevels]
-    rows = [str(round(1 / rate, 2)) + ' Hz' for rate in sampleRates]
-    for ax, col in zip(axarr[0], cols):
-        ax.set_title(col)
-
-    for ax, row in zip(axarr[:, 0], rows):
-        ax.set_ylabel(row, rotation=90, size='large')
-
-    fig.subplots_adjust(left=0.1, wspace=0.4, hspace=0.1)
-    ax = fig.add_subplot(111, frameon=False)
-    plt.tick_params(
-        labelcolor='none', top='off', bottom='off', left='off', right='off')
-    ax.set_xlabel('sigma-z', fontsize=15)
-    fig.text(0.04, 0.5, 'beta', ha='center', va='center',
-             rotation='vertical', fontsize=15)
-    ax.set_title(
-        'Segment Match Error (distance traveled)'
-        ' \n by Sample Rate', fontsize=20, y=1.04)
-    if saveFig:
-        fig.savefig('hmm_param_sweep.png')
-    plt.show()
-
+            ax.set_title('Noise: {0} m \n Sample Rate: {1} s'.format(
+                str(noise), str(rate)), fontsize=10)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.yaxis.set_ticks_position('left')
+            ax.xaxis.set_ticks_position('bottom')
+            if n == 0:
+                ax.set_ylabel('beta')
+            if r == len(sampleRates) - 1:
+                ax.set_xlabel('sigma_z')
+    fig.suptitle(
+        'Type I/II Distance-based Match Error', fontsize=20, x=.50, y=.96)
+    fig.text(0.06, 0.5, 'faster sample rate $\longrightarrow$', ha='center',
+             va='center', rotation='vertical', fontsize=15)
+    fig.text(0.5, 0.06, '$\longleftarrow$ less noise', ha='center',
+             va='center', fontsize=15)
+    fig.subplots_adjust(wspace=0.5)
+    if not plot:
+        plt.close()
+    else:
+        if saveFig:
+            fig.savefig('hmm_param_sweep.png')
+        plt.show()
     return paramDict
 
 
