@@ -26,7 +26,7 @@ import plotly.graph_objs as go
 
 
 sns.set_style({
-    'font.family': ['Bitstream Vera Sans'],
+    'font.family': ['DejaVu Sans'],
     'axes.facecolor': 'white',
     'axes.grid': False,
     'axes.linewidth': 1,
@@ -41,6 +41,7 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
                       turnPenaltyFactor=500, sigmaZ=4.07, beta=3,
                       speedErrThreshold=None, saveResults=True):
 
+    noTrafficSegs = 0
     distance_metrics = [
         'segments', 'distance traveled', 'undermatches',
         'undermatch distance', 'overmatches', 'overmatch distance']
@@ -98,7 +99,11 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
                         'route_url', 'trace_attr_url']] = [
                             routeName, noise, sampleRate, routeUrl,
                             traceAttrUrl]
-                dfEdges = format_edge_df(edges)
+                try:
+                    dfEdges = format_edge_df(edges)
+                except KeyError:
+                    noTrafficSegs += 1
+                    continue
                 if dfEdges['num_segments'].max() > 1:
                     break
                 dfEdges, jsonDict, geojson, gpsMatchEdges, \
@@ -233,6 +238,9 @@ def get_route_metrics(routeList, sampleRates, noiseLevels,
                             stName, endName, str(noise), str(Hz)), 'w+') as fp:
                                 json.dump(geojson, fp)
 
+    print(
+        '{0} routes skipped because they contained '
+        'no traffic segments'.format(noTrafficSegs))
     return df, speedDf, densityDf
 
 
@@ -524,10 +532,11 @@ def get_param_scores(paramDf, sampleRates, noiseLevels, betaVals, sigmaZVals,
                 ax.set_xlabel('sigma_z')
     fig.suptitle(
         'Type I/II Distance-based Match Error', fontsize=20, x=.50, y=.96)
-    fig.text(0.06, 0.5, 'faster sample rate $\longrightarrow$', ha='center',
-             va='center', rotation='vertical', fontsize=15)
-    fig.text(0.5, 0.06, '$\longleftarrow$ less noise', ha='center',
-             va='center', fontsize=15)
+    if len(axarr) > 1:
+        fig.text(0.06, 0.5, 'faster sample rate $\longrightarrow$', ha='center',
+                 va='center', rotation='vertical', fontsize=15)
+        fig.text(0.5, 0.06, '$\longleftarrow$ less noise', ha='center',
+                 va='center', fontsize=15)
     fig.subplots_adjust(wspace=0.5)
     if not plot:
         plt.close()
