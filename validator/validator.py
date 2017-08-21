@@ -440,6 +440,7 @@ def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
                            betaVals, sigmaZVals, turnPenaltyFactor=500,
                            saveResults=True):
     noTrafficSegs = 0
+    noGpsEdges = 0
     for i, rteCoords in enumerate(routeList):
         df = pd.DataFrame(
             columns=['sample_rate', 'noise', 'beta', 'sigma_z', 'score'])
@@ -470,12 +471,17 @@ def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
                         except KeyError:
                             noTrafficSegs += 1
                             continue
-                        dfEdges, jsonDict, geojson, gpsMatchEdges, \
-                            gpsMatchShape = \
-                            synthesize_gps(
-                                dfEdges, shapeCoords, '2768', noise=noise,
-                                sampleRate=sampleRate, turnPenaltyFactor=tpf,
-                                beta=beta, sigmaZ=sigmaZ)
+                        try:
+                            dfEdges, jsonDict, geojson, gpsMatchEdges, \
+                                gpsMatchShape = \
+                                synthesize_gps(
+                                    dfEdges, shapeCoords, '2768', noise=noise,
+                                    sampleRate=sampleRate,
+                                    turnPenaltyFactor=tpf,
+                                    beta=beta, sigmaZ=sigmaZ)
+                        except KeyError:
+                            noGpsEdges += 1
+                            continue
                         segments, reportUrl = get_reporter_segments(jsonDict)
                         segScore, distScore, undermatchScore, \
                             undermatchLenScore, overmatchScore, \
@@ -491,8 +497,12 @@ def grid_search_hmm_params(cityName, routeList, sampleRates, noiseLevels,
                 cityName, i + 1),
                 index=False)
     print(
-    '{0} route(s) skipped because they contained '
-    'no traffic segments'.format(noTrafficSegs))
+        '{0} route(s) skipped because they contained '
+        'no traffic segments'.format(noTrafficSegs))
+    print(
+        '{0} route(s) skipped because the synthetic GPS '
+        'returned no Valhalla edges'.format(noGpsEdges))
+
 
 def get_param_scores(paramDf, sampleRates, noiseLevels, betaVals, sigmaZVals,
                      plot=True, saveFig=True):
