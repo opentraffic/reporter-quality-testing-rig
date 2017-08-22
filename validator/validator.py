@@ -1313,7 +1313,7 @@ def generate_route_map(pathToGeojsonOrFeatureCollection, zoomLevel=11):
             displacementLines, gpsMatchShape, tooFastSegs, okSegs, \
             notMatchedSegs = data['features']
         g = GeoJSON(data=FeatureCollection([
-            trueRouteCoords, gpsMatchShape,
+            trueRouteCoords,
             tooFastSegs, okSegs, notMatchedSegs]))
     else:
         trueRouteCoords, resampledCoords, gpsRouteCoords, \
