@@ -403,7 +403,7 @@ def plot_accuracy_heatmap(speedDf, thresholds, sampleRates,
     fig, ax = plt.subplots(figsize=(12, 12))
     im = ax.imshow(accMat, interpolation='none', extent=[
         min(noiseLevels), max(noiseLevels), max(sampleRates),
-        min(sampleRates)])
+        min(sampleRates)], cmap='viridis')
     plt.colorbar(im, fraction=0.02)
     ax.set_xlabel("noise", fontsize=15)
     ax.set_ylabel("sample rate", fontsize=15)
@@ -1619,14 +1619,14 @@ def plot_err_before_after_optimization(defaultDf, tunedDf):
     ax.annotate(
         'median error - optimized params: {0}'.format(
             str(np.round(tunedDf['distance traveled'].median(), 2))),
-        xy=(tunedDf['distance traveled'].median(), 4), xytext=(0.6, 0.75),
-        textcoords='figure fraction', arrowprops=dict(
+        xy=(tunedDf['distance traveled'].median(), (maxY - minY) * .75),
+        xytext=(0.6, 0.75), textcoords='figure fraction', arrowprops=dict(
             width=0.05, facecolor='black'))
     ax.annotate(
         'median error - default params: {0}'.format(
             str(np.round(defaultDf['distance traveled'].median(), 2))),
-        xy=(defaultDf['distance traveled'].median(), 3), xytext=(0.6, 0.5),
-        textcoords='figure fraction', arrowprops=dict(
+        xy=(defaultDf['distance traveled'].median(), (maxY - minY) * .5),
+        xytext=(0.6, 0.5), textcoords='figure fraction', arrowprops=dict(
             width=0.05, facecolor='black'))
     ax.set_title(
         'Distribution of "A-OK Rides" Map-Matching Error'
