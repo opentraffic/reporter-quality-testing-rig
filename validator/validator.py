@@ -7,6 +7,7 @@ from shapely.geometry import LineString, MultiPoint, MultiLineString
 import numpy as np
 import json
 import pandas as pd
+import folium
 from random import shuffle
 from geojson import Feature, FeatureCollection
 import itertools
@@ -1335,6 +1336,41 @@ def generate_route_map(pathToGeojsonOrFeatureCollection, zoomLevel=11):
     g = GeoJSON(data=displacementLines)
     m.add_layer(g)
     return m
+
+
+def generate_route_map_2(pathToGeojsonOrFeatureCollection, zoomLevel=11):
+    if type(pathToGeojsonOrFeatureCollection) == str:
+        with open(pathToGeojsonOrFeatureCollection, "r") as f:
+            data = json.load(f)
+    else:
+        data = pathToGeojsonOrFeatureCollection
+    ctrLon, ctrLat = np.mean(
+        np.array(data['features'][0]['geometry']['coordinates']), axis=0)
+    center = [ctrLat, ctrLon]
+    m = folium.Map(location=center, tiles='cartodbpositron', zoom_start=14)
+    if len(data['features']) > 5:
+        trueRouteCoords, resampledCoords, gpsRouteCoords, \
+            displacementLines, gpsMatchShape, tooFastSegs, okSegs, \
+            notMatchedSegs = data['features']
+        folium.GeoJson(trueRouteCoords).add_to(m)
+        folium.GeoJson(tooFastSegs).add_to(m)
+        folium.GeoJson(okSegs).add_to(m)
+        folium.GeoJson(notMatchedSegs).add_to(m)
+    else:
+        trueRouteCoords, resampledCoords, gpsRouteCoords, \
+            displacementLines, gpsMatchShape = data['features']
+        folium.GeoJson(trueRouteCoords).add_to(m)
+        folium.GeoJson(gpsMatchShape).add_to(m)
+    for coords in resampledCoords['geometry']['coordinates']:
+        cm = folium.CircleMarker(
+            location=coords[::-1], radius=3, weight=1, color='#0000ff',
+            fill_opacity=0.4, fill_color='#0000ff').add_to(m)
+    for coords in gpsRouteCoords['geometry']['coordinates']:
+        cm = folium.CircleMarker(
+            location=coords[::-1], radius=3, weight=1, color='#ff0000',
+            fill_opacity=0.4, fill_color='#ff0000').add_to(m)
+    m.add_child(folium.GeoJson(displacementLines))
+    m
 
 
 def getLineFromPoints(point1, point2):
