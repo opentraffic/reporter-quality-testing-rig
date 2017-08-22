@@ -308,7 +308,8 @@ def plot_distance_metrics(df, sampleRates, saveFig=True):
         fig.savefig('match_errors_by_sample_rate.png')
 
 
-def get_optimal_speed_error_threshold(speedDf, plot=True, saveFig=True):
+def get_optimal_speed_error_threshold(speedDf, allowNegativeThresholds=False,
+                                      plot=True, saveFig=True):
     fig, ax = plt.subplots(figsize=(12, 8))
 
     matchedSorted = speedDf.loc[
@@ -372,7 +373,8 @@ def get_optimal_speed_error_threshold(speedDf, plot=True, saveFig=True):
         plt.show()
     if saveFig:
         fig.savefig('speed_error_cdfs.png')
-
+    if not allowNegativeThresholds:
+        errorAtMaxDiff = max(errorAtMaxDiff, 0)
     return errorAtMaxDiff
 
 
