@@ -1362,15 +1362,15 @@ def generate_route_map_2(pathToGeojsonOrFeatureCollection, zoomLevel=11):
         folium.GeoJson(trueRouteCoords).add_to(m)
         folium.GeoJson(gpsMatchShape).add_to(m)
     for coords in resampledCoords['geometry']['coordinates']:
-        cm = folium.CircleMarker(
+        folium.CircleMarker(
             location=coords[::-1], radius=3, weight=1, color='#0000ff',
             fill_opacity=0.4, fill_color='#0000ff').add_to(m)
     for coords in gpsRouteCoords['geometry']['coordinates']:
-        cm = folium.CircleMarker(
+        folium.CircleMarker(
             location=coords[::-1], radius=3, weight=1, color='#ff0000',
             fill_opacity=0.4, fill_color='#ff0000').add_to(m)
     m.add_child(folium.GeoJson(displacementLines))
-    m
+    return m
 
 
 def getLineFromPoints(point1, point2):
