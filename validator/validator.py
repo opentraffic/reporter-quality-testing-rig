@@ -197,21 +197,21 @@ def get_route_metrics(cityName, routeList, sampleRates, noiseLevels,
                     tooFastSegs = Feature(geometry=MultiLineString(
                         tooFastSegs), properties={"style": {
                             "color": "#cc3232",
-                            "weight": "3px",
+                            "weight": "3",
                             "opacity": 1.0,
                             "name": "too_fast_segs"}})
 
                     okSegs = Feature(geometry=MultiLineString(
                         okSegs), properties={"style": {
                             "color": "#2dc937",
-                            "weight": "3px",
+                            "weight": "3",
                             "opacity": 1.0,
                             "name": "ok_segs"}})
 
                     notMatchedSegs = Feature(geometry=MultiLineString(
                         notMatchedSegs), properties={"style": {
                             "color": "#ffff66",
-                            "weight": "3px",
+                            "weight": "3",
                             "opacity": 1.0,
                             "name": "not_matched_segs"}})
 
@@ -933,28 +933,28 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
         Feature(geometry=LineString(
             trueRouteCoords), properties={"style": {
                 "color": "#0000ff",
-                "weight": "2px"},
+                "weight": "2"},
                 "opacity": 0.9,
                 "name": "true_route_coords"}),
         Feature(geometry=MultiPoint(
             resampledCoords), properties={"style": {
                 "color": "#0000ff",
-                "weight": "3px"},
+                "weight": "3"},
                 "name": "resampled_coords"}),
         Feature(geometry=MultiPoint(
             gpsRouteCoords), properties={"style": {
                 "color": "#ff0000",
-                "weight": "3px"},
+                "weight": "3"},
                 "name": "gps_coords"}),
         Feature(geometry=MultiLineString(
             displacementLines), properties={"style": {
                 "color": "#000000",
-                "weight": "1px",
+                "weight": "1",
                 "name": "displacement_lines"}}),
         Feature(geometry=LineString(
             gpsMatchShape), properties={"style": {
                 "fillcolor": "#0000ff",
-                "weight": "7px",
+                "weight": "7",
                 "opacity": 0.9,
                 "name": "matched_gps_route"}})])
 
@@ -1347,7 +1347,8 @@ def generate_route_map_2(pathToGeojsonOrFeatureCollection, zoomLevel=11):
     ctrLon, ctrLat = np.mean(
         np.array(data['features'][0]['geometry']['coordinates']), axis=0)
     center = [ctrLat, ctrLon]
-    m = folium.Map(location=center, tiles='cartodbpositron', zoom_start=14)
+    m = folium.Map(location=center, tiles='cartodbpositron',
+                   zoom_start=zoomLevel)
     if len(data['features']) > 5:
         trueRouteCoords, resampledCoords, gpsRouteCoords, \
             displacementLines, gpsMatchShape, tooFastSegs, okSegs, \
