@@ -380,7 +380,7 @@ def get_optimal_speed_error_threshold(speedDf, allowNegativeThresholds=False,
 
 
 def plot_accuracy_heatmap(speedDf, thresholds, sampleRates,
-                          noiseLevels, saveFig=True):
+                          noiseLevels, kind='optimal', saveFig=True):
     accMat = np.ones((len(sampleRates), len(noiseLevels)))
     for i, sampleRate in enumerate(sampleRates):
         if len(thresholds) == len(sampleRates):
@@ -413,7 +413,11 @@ def plot_accuracy_heatmap(speedDf, thresholds, sampleRates,
     ax.set_yticks(
         np.arange(min(sampleRates), max(sampleRates), len(sampleRates)))
     ax.set_yticklabels([''] + map(str, (map(int, sampleRates))))
-    ax.set_title("Accuracy at Optimal Error Threshold", fontsize=15)
+    if kind == 'optimal':
+        ax.set_title("Accuracy at Optimal Error Threshold", fontsize=15)
+    else:
+        ax.set_title(
+            "Accuracy at Route-Specific Error Thresholds", fontsize=15)
     plt.show()
     if saveFig:
         fig.savefig('map_matching_acc_at_threshold.png')
