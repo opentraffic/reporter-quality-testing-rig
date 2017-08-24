@@ -148,12 +148,15 @@ def get_route_metrics(cityName, routeList, sampleRates, noiseLevels,
                         [[density, sampleRate, noise, False]],
                         columns=['density', 'sample_rate', 'noise', 'matched'])
                     densityDf = densityDf.append(tempDf, ignore_index=True)
-
-                edgeSpeedScore, pctTooFastEdges, pctTooSlowEdges, \
-                    segSpeedScore, pctTooFastSegs, pctTooSlowSegs, \
-                    segMatchSpeedScore, segMissSpeedScore, \
-                    segSpeedDf = get_speed_scores(
-                        gpsMatchEdges, dfEdges, segments, sampleRate)
+                try:
+                    edgeSpeedScore, pctTooFastEdges, pctTooSlowEdges, \
+                        segSpeedScore, pctTooFastSegs, pctTooSlowSegs, \
+                        segMatchSpeedScore, segMissSpeedScore, \
+                        segSpeedDf = get_speed_scores(
+                            gpsMatchEdges, dfEdges, segments, sampleRate)
+                except KeyError:
+                    noTrafficSegs += 1
+                    continue
                 if segSpeedDf is None:
                     continue
                 elif len(segSpeedDf) < 1:
