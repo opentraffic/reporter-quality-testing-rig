@@ -690,6 +690,63 @@ def plot_density_kdes_gridded(densityDf, saveFig=True):
         g.savefig('density_kdes_gridded.png')
 
 
+def normalize_densities(densityDf, sampleRates, noiseLevels):
+    freqDf = pd.DataFrame(
+        columns=['sample_rate', 'noise', 'density', 'matched', 'frequency'])
+    for r, rate in enumerate(sampleRates):
+        for n, noise in enumerate(noiseLevels):
+            rateDensityDf = densityDf[(densityDf['sample_rate'] == rate) &
+                                      (densityDf['density'] > 5) &
+                                      (densityDf['noise'] == noise)]
+            densityMatchCounts = rateDensityDf.groupby(
+                ['density', 'matched']).count().reset_index().drop(
+                'sample_rate', 1).rename(columns={'noise': 'count'})
+            densityCounts = rateDensityDf.groupby(
+                ['density']).count().reset_index().drop(
+                ['matched', 'noise'], 1).rename(
+                columns={'sample_rate': 'total_count'})
+            merged = pd.merge(densityMatchCounts, densityCounts)
+            merged['pct'] = merged['count'] / merged['total_count']
+            merged = merged[merged['total_count'] > 100]
+            merged['sample_rate'] = rate
+            merged['noise'] = noise
+            merged.rename(columns={'pct': 'frequency'}, inplace=True)
+            freqDf = pd.concat((freqDf, merged[[
+                'sample_rate', 'noise', 'density', 'matched',
+                'frequency']]), ignore_index=True)
+    freqDf.index.name = 'segment'
+    return freqDf
+
+
+def standardize_densities(densityDf):
+
+    typeMatchCounts = densityDf.groupby(
+        ['sample_rate', 'noise', 'density', 'matched']
+    ).size().reset_index().rename(columns={0: 'count'})
+    typeCounts = densityDf.groupby(
+        ['sample_rate', 'noise', 'density']
+    ).size().reset_index().rename(columns={0: 'total_count'})
+    merged = pd.merge(typeMatchCounts, typeCounts)
+    merged['pct_by_match_type'] = merged['count'] / merged['total_count']
+    mergedMatches = merged[(
+        merged['matched'] == False) & (merged['density'] > 5)]
+    mergedMatches = mergedMatches[[
+        'sample_rate', 'density', 'noise', 'pct_by_match_type']]
+    aggStatsMatchPct = mergedMatches.groupby(['sample_rate', 'noise']).agg(
+        {'pct_by_match_type': {
+            'mean_match_pct': 'mean', 'stddev_match_pct': 'std'}})
+    aggStatsMatchPct.columns = aggStatsMatchPct.columns.droplevel(0)
+    aggStatsMatchPct.reset_index(inplace=True)
+    aggStatsMerged = pd.merge(
+        mergedMatches, aggStatsMatchPct, on=['sample_rate', 'noise'])
+    aggStatsMerged['match_rate_normed'] = ((
+        aggStatsMerged['pct_by_match_type'] -
+        aggStatsMerged['mean_match_pct']) /
+        aggStatsMerged['stddev_match_pct']).round(2)
+    aggStatsMerged['above_avg'] = aggStatsMerged['match_rate_normed'] > 0
+    return aggStatsMerged
+
+
 def plot_density_regressions(freqDf, saveFig=True):
     sns.set_style({
         'font.family': ['DejaVu Sans'],
