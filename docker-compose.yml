@@ -3,7 +3,7 @@ version: '2'
 services:
 
   reporter:
-    image: opentraffic/reporter:07e14cdc91ae7fa2f7361b25e8ec1b1c2d1c1cc1
+    image: opentraffic/reporter:latest
     networks:
       - opentraffic
     ports:
@@ -36,7 +36,7 @@ services:
     container_name: kafka
 
   valhalla:
-    image: valhalla/docker:ppa-1.2.5
+    image: valhalla/docker:ppa-1.2.8
     ports:
       - "8002:8002"
     volumes:
