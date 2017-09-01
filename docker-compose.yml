@@ -53,6 +53,7 @@ services:
       - ./notebooks:/home/notebooks
       - ./data:/home/data
       - ./validator:/home/validator
+      - ~/.plotly:/home/.plotly
     networks:
       - opentraffic
     depends_on:
