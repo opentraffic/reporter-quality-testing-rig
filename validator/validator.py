@@ -1,5 +1,5 @@
 from __future__ import division
-# from ipywidgets import Layout
+from ipywidgets import Layout
 import glob
 import requests
 import time as t
@@ -19,7 +19,6 @@ from ipyleaflet import (
     Circle,
     GeoJSON
 )
-from ipywidgets import Layout
 from matplotlib import pyplot as plt
 import seaborn as sns
 import plotly.plotly as py
@@ -656,41 +655,36 @@ def plot_density_kdes(densityDf):
     ax.set_xlabel('Road Network Density', fontsize=15)
     ax.legend()
     ax.set_title('Distribution of Road Network Densities'
-                 ' by Segment Match Type', fontsize=20)
+                 ' by Segment Match Type', fontsize=18)
 
 
 def plot_density_kdes_gridded(densityDf, saveFig=True):
-    sns.set_style({'font.family': ['DejaVu Sans'],
-                   'axes.facecolor': 'white',
-                   'axes.grid': False,
-                   'axes.edgecolor': 'black',
-                   'axes.labelsize': 10,
-                   'xtick.major.size': 5,
-                   'xtick.direction': 'out',
-                   'ytick.major.size': 5,
-                   'ytick.direction': 'out',
-                   'axes.linewidth': 1,
-                   'xtick.labelsize': 10,
-                   'ytick.labelsize': 10,
-                   'axes.labelpad': 5,
-                   'axes.ymargin': .1,
-                   'axes.titlepad': -15})
-    g = sns.FacetGrid(
-        densityDf, hue='matched', palette={True: 'blue', False: 'red'},
-        col='noise', row='sample_rate')
-    g = g.map(sns.kdeplot, 'density', bw=1, shade=True)
-    g.set_titles("Noise: {col_name} m \n Sample Rate: {row_name} s", size=13)
-    g.fig.suptitle('$\longleftarrow$ less noise', fontsize=23, x=.55, y=.95)
-    g.fig.text(0.04, 0.5, 'faster sample rate $\longrightarrow$', ha='center',
-               va='center', rotation='vertical', fontsize=23)
 
-    g.fig.subplots_adjust(top=.9, left=0.1)
-    for i, ax in enumerate(g.axes[:, 0]):
-        if i == 0:
-            ax.legend(loc='center left', title='Matched')
+    with sns.axes_style({'axes.labelsize': 10,
+                         'xtick.labelsize': 10,
+                         'ytick.labelsize': 10,
+                         'axes.labelpad': 5,
+                         'axes.ymargin': .1,
+                         'axes.titlepad': -15}):
+        g = sns.FacetGrid(
+            densityDf, hue='matched', palette={True: 'blue', False: 'red'},
+            col='noise', row='sample_rate')
+        g = g.map(sns.kdeplot, 'density', bw=1, shade=True)
+        g.set_titles(
+            "Noise: {col_name} m \n Sample Rate: {row_name} s", size=13)
+        g.fig.suptitle(
+            '$\longleftarrow$ less noise', fontsize=23, x=.55, y=.95)
+        g.fig.text(
+            0.04, 0.5, 'faster sample rate $\longrightarrow$',
+            ha='center', va='center', rotation='vertical', fontsize=23)
 
-    if saveFig:
-        g.savefig('density_kdes_gridded.png')
+        g.fig.subplots_adjust(top=.9, left=0.1)
+        for i, ax in enumerate(g.axes[:, 0]):
+            if i == 0:
+                ax.legend(loc='center left', title='Matched')
+
+        if saveFig:
+            g.savefig('density_kdes_gridded.png')
 
 
 def normalize_densities(densityDf, sampleRates, noiseLevels):
@@ -751,35 +745,30 @@ def standardize_densities(densityDf):
 
 
 def plot_density_regressions(freqDf, saveFig=True):
-    sns.set_style({
-        'font.family': ['DejaVu Sans'],
-        'axes.facecolor': 'white',
-        'axes.grid': False,
-        'axes.edgecolor': 'black',
-        'axes.labelsize': 20,
-        'xtick.major.size': 5,
-        'xtick.direction': 'out',
-        'ytick.major.size': 5,
-        'ytick.direction': 'out',
-        'axes.linewidth': 1,
-        'xtick.labelsize': 15,
-        'ytick.labelsize': 15,
-        'axes.labelpad': 15,
-        'axes.titlepad': -45})
-    g = sns.lmplot(
-        x='density', y='frequency', data=freqDf[freqDf['matched'] == False],
-        col='noise', row='sample_rate', hue='noise', palette='viridis', ci=95)
-    g.set_titles("Noise: {col_name} m \n Sample Rate: {row_name} s", size=22)
-    g.fig.suptitle('$\longleftarrow$ less noise', fontsize=35, x=.55, y=.95)
-    g.fig.text(
-        0.04, 0.5, 'faster sample rate $\longrightarrow$', ha='center',
-        va='center', rotation='vertical', fontsize=35)
-    g.fig.subplots_adjust(top=.9, left=0.1)
-    for i, ax in enumerate(g.axes[:, 0]):
-        ax.set_ylabel('% mismatched \nsegments')
 
-    if saveFig:
-        g.savefig('density_regressions.png')
+    with sns.axes_style({'axes.labelsize': 20,
+                         'xtick.labelsize': 15,
+                         'ytick.labelsize': 15,
+                         'axes.labelpad': 15,
+                         'axes.titlepad': -45}):
+        g = sns.lmplot(
+            x='density', y='frequency',
+            data=freqDf[freqDf['matched'] == False],
+            col='noise', row='sample_rate', hue='noise',
+            palette='viridis', ci=95)
+        g.set_titles(
+            "Noise: {col_name} m \n Sample Rate: {row_name} s", size=22)
+        g.fig.suptitle(
+            '$\longleftarrow$ less noise', fontsize=35, x=.55, y=.95)
+        g.fig.text(
+            0.04, 0.5, 'faster sample rate $\longrightarrow$', ha='center',
+            va='center', rotation='vertical', fontsize=35)
+        g.fig.subplots_adjust(top=.9, left=0.1)
+        for i, ax in enumerate(g.axes[:, 0]):
+            ax.set_ylabel('% mismatched \nsegments')
+
+        if saveFig:
+            g.savefig('density_regressions.png')
 
 
 def plot_interactive_densities(stdizedDensityDf):
@@ -1734,3 +1723,57 @@ def plot_err_before_after_optimization(defaultDf, tunedDf):
     ax.set_title(
         'Distribution of "A-OK Rides" Map-Matching Error'
         ' \nBefore and After Parameter Optimization', fontsize=20)
+
+
+def plot_regional_comparison(cityADataFrame, cityBDataFrame, sampleRates,
+                             cityNameA, cityNameB):
+    dataCityA = cityADataFrame[[
+        'noise', 'distance traveled', 'sample_rate']].groupby(
+            ['sample_rate', 'noise']).agg('median').reset_index()
+    dataCityB = cityBDataFrame[[
+        'noise', 'distance traveled', 'sample_rate']].groupby(
+            ['sample_rate', 'noise']).agg('median').reset_index()
+    data = pd.merge(
+        dataCityA, dataCityB, on=['sample_rate', 'noise'],
+        suffixes=('_sf', '_irv'))
+
+    data['pct_diff'] = ((
+        data['distance traveled_sf'] - data['distance traveled_irv']) /
+        data['distance traveled_sf'])
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    norm = plt.Normalize()
+    cmap = plt.get_cmap('RdYlBu_r')
+    colors = cmap(norm(sampleRates))
+
+    for k, rate in enumerate(sampleRates):
+        ax.scatter(
+            data.loc[data['sample_rate'] == rate, 'noise'],
+            data.loc[data['sample_rate'] == rate, 'pct_diff'],
+            label=str(rate) + ' s', alpha=0.5, s=100, edgecolors='k', lw=1,
+            color=colors[k])
+    ax.legend(loc=4, title='Sample Rate')
+    ax.set_title(
+        '% Change in Type I/II Distance-based Error: {0} vs. {1}'.format(
+            cityNameA, cityNameB), fontsize=18)
+    xmin, xmax = ax.get_xbound()
+    ymin, ymax = ax.get_ybound()
+    ax.hlines(
+        y=0, xmin=xmin, xmax=xmax, edgecolor='k', linestyles='--',
+        zorder=0, lw=1)
+    ax.annotate(
+        '', xy=(xmax + 8, ymin), xytext=(xmax + 8, 0), arrowprops=dict(
+            arrowstyle='<->', edgecolor='red', linewidth=1),
+        annotation_clip=False)
+    ax.annotate(
+        '{0} > {1}'.format(cityNameB, cityNameA), xy=(xmax + 10, ymax / 2),
+        annotation_clip=False)
+    ax.annotate(
+        '', xy=(xmax + 8, 0), xytext=(xmax + 8, ymax), arrowprops=dict(
+            arrowstyle='<->', edgecolor='red', linewidth=1),
+        annotation_clip=False)
+    ax.annotate(
+        '{0} > {1}'.format(cityNameA, cityNameB), xy=(xmax + 10, ymin / 2),
+        annotation_clip=False)
+    ax.set_ylabel('% Change', fontsize=15)
+    ax.set_xlabel('Noise (m)', fontsize=15)
