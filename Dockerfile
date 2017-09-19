@@ -4,7 +4,7 @@ USER root
 # env
 ENV DEBIAN_FRONTEND noninteractive
 
-ENV VALHALLA_VERSION "2.3.0"
+ENV VALHALLA_VERSION "2.3.6"
 
 ENV CONDA_DIR /opt/conda
 ENV PATH $CONDA_DIR/bin:$PATH
@@ -53,11 +53,12 @@ RUN conda install --quiet --yes \
     'requests=2.9*' \
     'pandas=0.19*' \
     'geojson=1.3*' \
-    'scipy=0.17*' \ 
+    'scipy=0.17*' \
     'Shapely=1.5*' \
     'seaborn=0.7*' \
-    'plotly' \ 
-    'osmnx' \ 
+    'plotly' \
+    'osmnx' \
+    'folium' \
     'paramiko' && \
     conda clean -tipsy
 
@@ -77,8 +78,9 @@ RUN conda create --quiet --yes -p $CONDA_DIR/envs/python2 python=2.7 \
     'scipy=0.17*' \
     'Shapely=1.5*' \
     'seaborn=0.7*' \
-    'plotly' \ 
+    'plotly' \
     'osmnx' \
+    'folium' \
     'paramiko' && \
     conda clean -tipsy
 
