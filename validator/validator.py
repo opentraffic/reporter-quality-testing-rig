@@ -13,12 +13,12 @@ from geojson import Feature, FeatureCollection
 import itertools
 from pyproj import Proj, transform
 from scipy.stats import norm
-from ipyleaflet import (
-    Map,
-    TileLayer,
-    Circle,
-    GeoJSON
-)
+# from ipyleaflet import (
+#     Map,
+#     TileLayer,
+#     Circle,
+#     GeoJSON
+# )
 from matplotlib import pyplot as plt
 import seaborn as sns
 import plotly.plotly as py
@@ -185,7 +185,7 @@ def get_route_metrics(cityName, routeList, sampleRates, noiseLevels,
                     notMatchedSegs = []
                     threshold = 0.05
 
-                    for i, row in merged.iterrows():
+                    for r, row in merged.iterrows():
                         segCoords = gpsMatchShape[
                             int(row['begin_shape_index']):int(
                                 (row['end_shape_index'] + 1))]
@@ -1007,7 +1007,7 @@ def synthesize_gps(dfEdges, shapeCoords, localEpsg, distribution="normal",
         Feature(geometry=LineString(
             gpsMatchShape), properties={"style": {
                 "fillcolor": "#0000ff",
-                "weight": "7",
+                "weight": "2",
                 "opacity": 0.9,
                 "name": "matched_gps_route"}})])
 

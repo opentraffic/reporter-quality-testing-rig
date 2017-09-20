@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -yq --no-install-recommends \
     vim \
     jed \
     emacs \
+    python-pip \
     wget \
     build-essential \
     python-dev \
@@ -33,6 +34,7 @@ RUN apt-get update && apt-get install -yq --no-install-recommends \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*a
 
+RUN pip install --upgrade setuptools
 
 RUN cd /tmp && \
     mkdir -p $CONDA_DIR && \
@@ -44,11 +46,12 @@ RUN cd /tmp && \
     $CONDA_DIR/bin/conda config --system --set auto_update_conda false && \
     conda clean -tipsy
 
+RUN pip install --upgrade pip
+
 # Install Jupyter Notebook and Hub
 RUN conda install --quiet --yes \
     'notebook=4.4.*' \
     'ipywidgets=6.0*' \
-    'ipyleaflet' \
     'basemap=1.0*' \
     'requests=2.9*' \
     'pandas=0.19*' \
@@ -58,7 +61,6 @@ RUN conda install --quiet --yes \
     'seaborn=0.7*' \
     'plotly' \
     'osmnx' \
-    'folium' \
     'paramiko' && \
     conda clean -tipsy
 
@@ -69,35 +71,39 @@ RUN jupyter nbextension enable --py widgetsnbextension --sys-prefix
 RUN conda create --quiet --yes -p $CONDA_DIR/envs/python2 python=2.7 \
     'ipython=4.2*' \
     'ipywidgets=6.0*' \
-    'ipyleaflet' \
-    'pyshp' \
     'requests=2.9*' \
     'basemap=1.0*' \
     'pandas=0.19*' \
-    'geojson=1.3*' \
     'scipy=0.17*' \
     'Shapely=1.5*' \
     'seaborn=0.7*' \
     'plotly' \
-    'osmnx' \
-    'folium' \
     'paramiko' && \
     conda clean -tipsy
 
-RUN conda install --quiet --yes -p $CONDA_DIR/envs/python2 -c conda-forge ipycache 
+RUN conda install --quiet --yes -p $CONDA_DIR/envs/python2 --force ipython
+RUN conda install --quiet --yes --force ipython
+RUN conda install --quiet --yes -p $CONDA_DIR/envs/python2 --force backports
+RUN conda install --quiet --yes --force backports
+
+RUN conda install --quiet --yes -p $CONDA_DIR/envs/python2 -c conda-forge ipycache \
+    pyshp \
+    'geojson=1.3*' \
+    backports.shutil_get_terminal_size
+
+RUN conda install --quiet --yes -c conda-forge backports.shutil_get_terminal_size
 
 # Add shortcuts to distinguish pip for python2 and python3 envs
-RUN ln -s $CONDA_DIR/envs/python2/bin/pip $CONDA_DIR/bin/pip2 && \
-    ln -s $CONDA_DIR/bin/pip $CONDA_DIR/bin/pip3
+RUN ln -s $CONDA_DIR/envs/python2/bin/pip $CONDA_DIR/bin/pip2 
+#RUN ln -s $CONDA_DIR/bin/pip $CONDA_DIR/bin/pip3
 
-
-RUN jupyter nbextension enable --py --sys-prefix ipyleaflet
-
+RUN $CONDA_DIR/bin/pip2 install folium osmnx
 
 # Install Python 2 kernel spec globally to avoid permission problems when NB_UID
 # switching at runtime and to allow the notebook server running out of the root
 # environment to find it. Also, activate the python2 environment upon kernel
 # launch.
+
 RUN pip install kernda --no-cache && \
     $CONDA_DIR/envs/python2/bin/python -m ipykernel install && \
     kernda -o -y /usr/local/share/jupyter/kernels/python2/kernel.json && \
